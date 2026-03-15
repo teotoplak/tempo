@@ -62,6 +62,7 @@ final class TempoAppModel {
     var isPromptOverdue = false
     var accountableElapsedInterval: TimeInterval = 0
     var checkInPromptState = CheckInPromptState.hidden
+    var promptSearchText = ""
 
     private let clock: any SchedulerClock
     private let scheduler: PollingScheduler
@@ -164,6 +165,53 @@ final class TempoAppModel {
         checkInPromptWindowController?.hide()
     }
 
+    var recentPromptProjects: [ProjectRecord] {
+        let projects = fetchProjects()
+        let recentEndDates = recentPromptProjectEndDates()
+
+        return projects.sorted { lhs, rhs in
+            let lhsRecent = recentEndDates[lhs.id]
+            let rhsRecent = recentEndDates[rhs.id]
+
+            switch (lhsRecent, rhsRecent) {
+            case let (lhsDate?, rhsDate?):
+                if lhsDate != rhsDate {
+                    return lhsDate > rhsDate
+                }
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            case (nil, nil):
+                break
+            }
+
+            return lhs.sortOrder < rhs.sortOrder
+        }
+    }
+
+    var filteredPromptProjects: [ProjectRecord] {
+        let query = promptSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            return recentPromptProjects
+        }
+
+        return recentPromptProjects.filter { project in
+            project.name.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    func canCreatePromptProject(named rawName: String) -> Bool {
+        let trimmedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            return false
+        }
+
+        return !fetchProjects().contains { project in
+            project.name.compare(trimmedName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+    }
+
     func createProject(named name: String) throws {
         let nextSortOrder = nextProjectSortOrder()
         let project = ProjectRecord(name: name, sortOrder: nextSortOrder)
@@ -194,6 +242,27 @@ final class TempoAppModel {
         let descriptor = FetchDescriptor<ProjectRecord>(sortBy: [SortDescriptor(\.sortOrder, order: .reverse)])
         let currentHighest = try? modelContext.fetch(descriptor).first?.sortOrder
         return (currentHighest ?? -1) + 1
+    }
+
+    private func fetchProjects() -> [ProjectRecord] {
+        let descriptor = FetchDescriptor<ProjectRecord>(sortBy: [SortDescriptor(\.sortOrder)])
+        return (try? modelContext.fetch(descriptor)) ?? []
+    }
+
+    private func recentPromptProjectEndDates() -> [UUID: Date] {
+        let descriptor = FetchDescriptor<TimeEntryRecord>(sortBy: [SortDescriptor(\.endAt, order: .reverse)])
+        let entries = (try? modelContext.fetch(descriptor)) ?? []
+        var latestEndDateByProjectID: [UUID: Date] = [:]
+
+        for entry in entries {
+            guard let project = entry.project, latestEndDateByProjectID[project.id] == nil else {
+                continue
+            }
+
+            latestEndDateByProjectID[project.id] = entry.endAt
+        }
+
+        return latestEndDateByProjectID
     }
 
     private func observeWorkspaceWake() {

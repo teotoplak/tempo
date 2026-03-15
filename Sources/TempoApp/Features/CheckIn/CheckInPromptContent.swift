@@ -24,17 +24,52 @@ struct CheckInPromptContent: View {
                 }
             }
 
-            Spacer()
+            VStack(alignment: .leading, spacing: 16) {
+                TextField("Find or create a project", text: promptSearchText)
+                    .textFieldStyle(.roundedBorder)
 
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
-                .frame(maxWidth: .infinity, minHeight: 160)
-                .overlay(alignment: .topLeading) {
-                    Text("Project selection arrives in the next plan.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .padding(20)
+                if let appModel, appModel.canCreatePromptProject(named: appModel.promptSearchText) {
+                    InlineProjectCreationView(name: appModel.promptSearchText) {
+                        createProjectFromPrompt()
+                    }
                 }
+
+                CheckInProjectListView(
+                    projects: appModel?.filteredPromptProjects ?? [],
+                    selectProjectForPrompt: selectProjectForPrompt
+                )
+            }
+
+            if appModel?.filteredPromptProjects.isEmpty ?? true {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                    .frame(maxWidth: .infinity, minHeight: 120)
+                    .overlay {
+                        Text("No matching projects yet.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .padding(20)
+                    }
+            } else {
+                Spacer(minLength: 0)
+            }
         }
+    }
+
+    private var promptSearchText: Binding<String> {
+        Binding(
+            get: { appModel?.promptSearchText ?? "" },
+            set: { newValue in
+                appModel?.promptSearchText = newValue
+            }
+        )
+    }
+
+    private func selectProjectForPrompt(_ project: ProjectRecord) {
+        appModel?.dismissCheckInPrompt()
+    }
+
+    private func createProjectFromPrompt() {
+        appModel?.dismissCheckInPrompt()
     }
 }
