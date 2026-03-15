@@ -3,7 +3,6 @@ import SwiftData
 
 @Model
 final class TimeEntryRecord {
-    @Relationship(inverse: \ProjectRecord.timeEntries)
     var project: ProjectRecord?
     var startAt: Date
     var endAt: Date

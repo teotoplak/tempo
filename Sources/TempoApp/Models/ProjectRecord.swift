@@ -8,7 +8,6 @@ final class ProjectRecord {
     var createdAt: Date
     var sortOrder: Int
 
-    @Relationship(deleteRule: .nullify, inverse: \TimeEntryRecord.project)
     var timeEntries: [TimeEntryRecord]
 
     init(

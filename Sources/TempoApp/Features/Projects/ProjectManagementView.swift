@@ -82,15 +82,27 @@ struct ProjectManagementView: View {
         }
         .confirmationDialog(
             "Delete this project?",
-            item: $deletionCandidate,
+            isPresented: Binding(
+                get: { deletionCandidate != nil },
+                set: { newValue in
+                    if !newValue {
+                        deletionCandidate = nil
+                    }
+                }
+            ),
             titleVisibility: .visible
-        ) { project in
+        ) {
             Button("Delete", role: .destructive) {
-                delete(project)
+                if let deletionCandidate {
+                    delete(deletionCandidate)
+                }
+                deletionCandidate = nil
             }
-            Button("Cancel", role: .cancel) {}
-        } message: { project in
-            Text("Tempo will keep local data safe and block deletion if \(project.name) already has tracked time.")
+            Button("Cancel", role: .cancel) {
+                deletionCandidate = nil
+            }
+        } message: {
+            Text("Tempo will keep local data safe and block deletion if \((deletionCandidate?.name ?? "this project")) already has tracked time.")
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
