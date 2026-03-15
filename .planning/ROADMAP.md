@@ -6,7 +6,7 @@ The roadmap starts by establishing a reliable native macOS foundation for local 
 
 ## Phases
 
-- [ ] **Phase 1: Foundation and Timing Engine** - Build the native menu bar shell, local data model, settings, and polling engine that define the product’s correctness baseline.
+- [x] **Phase 1: Foundation and Timing Engine** - Build the native menu bar shell, local data model, settings, and polling engine that define the product’s correctness baseline.
 - [ ] **Phase 2: Check-In Logging Flow** - Deliver the full-screen prompt and project-based time attribution flow that turns polling into actual tracked entries.
 - [ ] **Phase 3: Deferrals, Silence, and Menu Bar Control** - Add postponement, silence controls, and menu bar status/actions for daily usability.
 - [ ] **Phase 4: Idle and Locked-Screen Reconciliation** - Prevent incorrect active tracking during inactivity and let the user resolve idle time explicitly.
@@ -27,9 +27,9 @@ The roadmap starts by establishing a reliable native macOS foundation for local 
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: Set up the SwiftUI menu bar app shell and local persistence foundation.
-- [ ] 01-02: Implement project and settings data models with editing UI.
-- [ ] 01-03: Build the polling scheduler and persisted timing state.
+- [x] 01-01: Set up the SwiftUI menu bar app shell and local persistence foundation.
+- [x] 01-02: Implement project and settings data models with editing UI.
+- [x] 01-03: Build the polling scheduler and persisted timing state.
 
 ### Phase 2: Check-In Logging Flow
 **Goal**: Turn the scheduler into a usable check-in experience that captures current work accurately and records elapsed time against projects.
@@ -114,7 +114,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation and Timing Engine | 0/3 | Not started | - |
+| 1. Foundation and Timing Engine | 3/3 | Complete | 2026-03-15 |
 | 2. Check-In Logging Flow | 0/3 | Not started | - |
 | 3. Deferrals, Silence, and Menu Bar Control | 0/3 | Not started | - |
 | 4. Idle and Locked-Screen Reconciliation | 0/2 | Not started | - |

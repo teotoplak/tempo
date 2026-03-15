@@ -7,14 +7,14 @@
 
 ### Projects
 
-- [ ] **PROJ-01**: User can create a project from the main app interface.
+- [x] **PROJ-01**: User can create a project from the main app interface.
 - [ ] **PROJ-02**: User can select from existing projects during a check-in.
 - [ ] **PROJ-03**: User can create a new project inline during a check-in without leaving the popup.
-- [ ] **PROJ-04**: Projects are stored and presented as a flat list with no hierarchy.
+- [x] **PROJ-04**: Projects are stored and presented as a flat list with no hierarchy.
 
 ### Polling Check-In
 
-- [ ] **POLL-01**: App shows a check-in prompt at the configured interval, with a default interval of 25 minutes.
+- [x] **POLL-01**: App shows a check-in prompt at the configured interval, with a default interval of 25 minutes.
 - [ ] **POLL-02**: Check-in prompt appears as a full-screen UI intended to capture attention.
 - [ ] **POLL-03**: Check-in prompt does not block normal keyboard or mouse input outside its own controls.
 - [ ] **POLL-04**: Check-in prompt displays the existing project list.
@@ -26,7 +26,7 @@
 ### Delay
 
 - [ ] **DELY-01**: User can postpone a check-in by choosing a delay duration.
-- [ ] **DELY-02**: Delay duration options are configurable in settings.
+- [x] **DELY-02**: Delay duration options are configurable in settings.
 - [ ] **DELY-03**: App re-prompts automatically when the selected delay period ends.
 
 ### Silence
@@ -60,7 +60,7 @@
 
 ### Menu Bar
 
-- [ ] **MENU-01**: App runs as a menu bar application.
+- [x] **MENU-01**: App runs as a menu bar application.
 - [ ] **MENU-02**: Menu bar UI shows a countdown until the next check-in.
 - [ ] **MENU-03**: Menu bar dropdown shows the current active project context.
 - [ ] **MENU-04**: Menu bar dropdown shows total time tracked for today.
@@ -68,15 +68,15 @@
 
 ### Settings
 
-- [ ] **SETG-01**: User can configure the polling interval, defaulting to 25 minutes.
-- [ ] **SETG-02**: User can configure the idle detection threshold, defaulting to 5 minutes.
-- [ ] **SETG-03**: User can configure the set of delay duration options.
+- [x] **SETG-01**: User can configure the polling interval, defaulting to 25 minutes.
+- [x] **SETG-02**: User can configure the idle detection threshold, defaulting to 5 minutes.
+- [x] **SETG-03**: User can configure the set of delay duration options.
 - [ ] **SETG-04**: User can enable or disable launch at login.
 
 ### Local Data and UX
 
-- [ ] **DATA-01**: All projects, settings, and tracked time are stored locally on the user’s Mac.
-- [ ] **DATA-02**: App does not require cloud sync or any network connectivity to function.
+- [x] **DATA-01**: All projects, settings, and tracked time are stored locally on the user’s Mac.
+- [x] **DATA-02**: App does not require cloud sync or any network connectivity to function.
 - [ ] **UX-01**: App does not play sounds for prompts, confirmations, or alerts.
 
 ## v2 Requirements
@@ -105,11 +105,11 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROJ-01 | Phase 1 | Pending |
+| PROJ-01 | Phase 1 | Completed |
 | PROJ-02 | Phase 2 | Pending |
 | PROJ-03 | Phase 2 | Pending |
-| PROJ-04 | Phase 1 | Pending |
-| POLL-01 | Phase 1 | Pending |
+| PROJ-04 | Phase 1 | Completed |
+| POLL-01 | Phase 1 | Completed |
 | POLL-02 | Phase 2 | Pending |
 | POLL-03 | Phase 2 | Pending |
 | POLL-04 | Phase 2 | Pending |
@@ -118,7 +118,7 @@
 | POLL-07 | Phase 3 | Pending |
 | POLL-08 | Phase 3 | Pending |
 | DELY-01 | Phase 3 | Pending |
-| DELY-02 | Phase 1 | Pending |
+| DELY-02 | Phase 1 | Completed |
 | DELY-03 | Phase 3 | Pending |
 | SILN-01 | Phase 3 | Pending |
 | SILN-02 | Phase 3 | Pending |
@@ -137,17 +137,17 @@
 | ANLY-06 | Phase 5 | Pending |
 | EXPT-01 | Phase 5 | Pending |
 | EXPT-02 | Phase 5 | Pending |
-| MENU-01 | Phase 1 | Pending |
+| MENU-01 | Phase 1 | Completed |
 | MENU-02 | Phase 3 | Pending |
 | MENU-03 | Phase 3 | Pending |
 | MENU-04 | Phase 3 | Pending |
 | MENU-05 | Phase 3 | Pending |
-| SETG-01 | Phase 1 | Pending |
-| SETG-02 | Phase 1 | Pending |
-| SETG-03 | Phase 1 | Pending |
+| SETG-01 | Phase 1 | Completed |
+| SETG-02 | Phase 1 | Completed |
+| SETG-03 | Phase 1 | Completed |
 | SETG-04 | Phase 6 | Pending |
-| DATA-01 | Phase 1 | Pending |
-| DATA-02 | Phase 1 | Pending |
+| DATA-01 | Phase 1 | Completed |
+| DATA-02 | Phase 1 | Completed |
 | UX-01 | Phase 2 | Pending |
 
 **Coverage:**
