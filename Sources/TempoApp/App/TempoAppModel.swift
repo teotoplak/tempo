@@ -23,6 +23,20 @@ struct CheckInPromptState: Equatable {
     )
 }
 
+enum IdleResolutionError: LocalizedError {
+    case noPendingIdle
+    case invalidSplitDuration
+
+    var errorDescription: String? {
+        switch self {
+        case .noPendingIdle:
+            return "No pending idle interval is available."
+        case .invalidSplitDuration:
+            return "The first segment must be greater than zero and shorter than the full idle interval."
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class TempoAppModel {
@@ -70,6 +84,9 @@ final class TempoAppModel {
     var pendingIdleEndedAt: Date?
     var pendingIdleReason: String?
     var pendingIdleDuration: TimeInterval = 0
+    var selectedPromptProjectID: UUID?
+    var idleSplitFirstDurationMinutes = 1
+    var idleSplitSecondProjectID: UUID?
     var checkInPromptState = CheckInPromptState.hidden
     var promptSearchText = ""
 
@@ -171,6 +188,7 @@ final class TempoAppModel {
     }
 
     func refreshCheckInPromptState() {
+        ensureIdleSelectionDefaults()
         let shouldPresent = isPromptOverdue || shouldPresentPendingIdlePrompt
         let promptTitle = shouldPresentPendingIdlePrompt ? "Resolve idle time" : "What are you currently doing"
         let supportingSubtitle = shouldPresentPendingIdlePrompt
@@ -271,6 +289,31 @@ final class TempoAppModel {
         Self.idleSupportingSubtitle(duration: pendingIdleDuration, reason: pendingIdleReasonLabel)
     }
 
+    var selectedPromptProject: ProjectRecord? {
+        guard let selectedPromptProjectID else {
+            return nil
+        }
+
+        return fetchProjects().first { $0.id == selectedPromptProjectID }
+    }
+
+    var idleSplitSecondProject: ProjectRecord? {
+        guard let idleSplitSecondProjectID else {
+            return nil
+        }
+
+        return fetchProjects().first { $0.id == idleSplitSecondProjectID }
+    }
+
+    var pendingIdleReasonDisplayText: String {
+        pendingIdleReasonLabel
+    }
+
+    var firstIdleSegmentMinutesRange: ClosedRange<Int> {
+        let totalMinutes = max(Int(pendingIdleDuration / 60), 0)
+        return 1...max(totalMinutes - 1, 1)
+    }
+
     var recentPromptProjects: [ProjectRecord] {
         let projects = fetchProjects()
         let recentEndDates = recentPromptProjectEndDates()
@@ -323,6 +366,11 @@ final class TempoAppModel {
     }
 
     func selectProjectForPrompt(_ project: ProjectRecord) throws {
+        if isIdlePending {
+            try assignPendingIdle(to: project)
+            return
+        }
+
         let completionDate = clock.now
         let entryEndAt = completionDate
         let entryStartAt = entryEndAt.addingTimeInterval(-accountableElapsedInterval)
@@ -351,6 +399,14 @@ final class TempoAppModel {
 
     func createAndSelectProjectForPrompt(named name: String) throws {
         let project = try createProjectRecord(named: name)
+        if isIdlePending {
+            selectedPromptProjectID = project.id
+            idleSplitSecondProjectID = project.id
+            promptSearchText = ""
+            refreshCheckInPromptState()
+            return
+        }
+
         try selectProjectForPrompt(project)
     }
 
@@ -413,6 +469,71 @@ final class TempoAppModel {
         isPromptOverdue = true
         refreshCheckInPromptState()
         presentCheckInPromptIfNeeded()
+    }
+
+    func assignPendingIdle(to project: ProjectRecord) throws {
+        guard let pendingIdleStartedAt, let pendingIdleEndedAt else {
+            throw IdleResolutionError.noPendingIdle
+        }
+
+        modelContext.insert(
+            TimeEntryRecord(
+                project: project,
+                startAt: pendingIdleStartedAt,
+                endAt: pendingIdleEndedAt,
+                source: "idle-assigned"
+            )
+        )
+        try completePendingIdleResolution()
+    }
+
+    func discardPendingIdle() throws {
+        guard pendingIdleStartedAt != nil, pendingIdleEndedAt != nil else {
+            throw IdleResolutionError.noPendingIdle
+        }
+
+        try completePendingIdleResolution()
+    }
+
+    func splitPendingIdle(
+        firstProject: ProjectRecord,
+        firstDurationMinutes: Int,
+        secondProject: ProjectRecord
+    ) throws {
+        guard let pendingIdleStartedAt, let pendingIdleEndedAt else {
+            throw IdleResolutionError.noPendingIdle
+        }
+
+        let totalSeconds = pendingIdleEndedAt.timeIntervalSince(pendingIdleStartedAt)
+        let firstDuration = TimeInterval(firstDurationMinutes * 60)
+        guard firstDuration > 0, firstDuration < totalSeconds else {
+            throw IdleResolutionError.invalidSplitDuration
+        }
+
+        let splitAt = pendingIdleStartedAt.addingTimeInterval(firstDuration)
+        let secondDuration = pendingIdleEndedAt.timeIntervalSince(splitAt)
+        guard abs((firstDuration + secondDuration) - totalSeconds) < 0.5 else {
+            throw IdleResolutionError.invalidSplitDuration
+        }
+
+        modelContext.insert(
+            TimeEntryRecord(
+                project: firstProject,
+                startAt: pendingIdleStartedAt,
+                endAt: splitAt,
+                source: "idle-split"
+            )
+        )
+        modelContext.insert(
+            TimeEntryRecord(
+                project: secondProject,
+                startAt: splitAt,
+                endAt: pendingIdleEndedAt,
+                source: "idle-split"
+            )
+        )
+
+        try completePendingIdleResolution()
     }
 
     func detectInactivityIfNeeded(activityDate: Date) {
@@ -542,6 +663,48 @@ final class TempoAppModel {
         return try? modelContext.fetch(descriptor).first
     }
 
+    private func completePendingIdleResolution() throws {
+        let completionResult = scheduler.completeCheckIn(
+            state: schedulerStateRecord,
+            settings: settings,
+            completionDate: clock.now
+        )
+        schedulerStateStore.apply(completionResult, to: schedulerStateRecord)
+        try schedulerStateStore.save(schedulerStateRecord)
+
+        apply(snapshot: completionResult.snapshot)
+        selectedPromptProjectID = nil
+        idleSplitSecondProjectID = nil
+        idleSplitFirstDurationMinutes = 1
+        promptSearchText = ""
+        refreshCheckInPromptState()
+        dismissCheckInPrompt()
+    }
+
+    private func ensureIdleSelectionDefaults() {
+        guard isIdlePending else {
+            return
+        }
+
+        let projects = filteredPromptProjects.isEmpty ? recentPromptProjects : filteredPromptProjects
+
+        if selectedPromptProject == nil {
+            selectedPromptProjectID = projects.first?.id
+        }
+
+        if idleSplitSecondProject == nil {
+            idleSplitSecondProjectID = projects.first?.id
+        }
+
+        let totalMinutes = max(Int(pendingIdleDuration / 60), 0)
+        if totalMinutes > 1 {
+            let clamped = min(max(idleSplitFirstDurationMinutes, 1), totalMinutes - 1)
+            idleSplitFirstDurationMinutes = clamped
+        } else {
+            idleSplitFirstDurationMinutes = 1
+        }
+    }
+
     private func observeWorkspaceWake() {
         guard workspaceObservers.isEmpty else {
             return
@@ -614,6 +777,11 @@ final class TempoAppModel {
         pendingIdleEndedAt = snapshot.pendingIdleEndedAt
         pendingIdleReason = snapshot.pendingIdleReason
         pendingIdleDuration = max((snapshot.pendingIdleEndedAt ?? snapshot.pendingIdleStartedAt ?? clock.now).timeIntervalSince(snapshot.pendingIdleStartedAt ?? clock.now), 0)
+        if !snapshot.isIdlePending {
+            selectedPromptProjectID = nil
+            idleSplitSecondProjectID = nil
+            idleSplitFirstDurationMinutes = 1
+        }
     }
 
     private var shouldPresentPendingIdlePrompt: Bool {

@@ -11,13 +11,17 @@ struct CheckInPromptContent: View {
                     .font(.headline.smallCaps())
                     .foregroundStyle(.secondary)
 
-                Text("What are you currently doing")
+                Text(state.promptTitle)
                     .font(.system(size: 30, weight: .semibold, design: .rounded))
 
-                Text(TempoAppModel.formattedElapsedText(for: state.elapsedDuration))
+                Text(state.supportingSubtitle)
                     .font(.title3.weight(.medium))
 
-                if state.isOverdue {
+                if appModel?.isIdlePending == true {
+                    Text("\(appModel?.pendingIdleReasonDisplayText ?? "Inactive") interval ready for reconciliation.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else if state.isOverdue {
                     Text("This check-in is overdue, so Tempo is holding the full elapsed block until you classify it.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -25,26 +29,8 @@ struct CheckInPromptContent: View {
             }
 
             VStack(alignment: .leading, spacing: 16) {
-                if let appModel {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Quick actions")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-
-                        HStack(spacing: 10) {
-                            ForEach(appModel.delayPresetMinutes, id: \.self) { preset in
-                                Button("Delay \(preset) min") {
-                                    try? appModel.delayPrompt(byMinutes: preset)
-                                }
-                                .buttonStyle(.bordered)
-                            }
-
-                            Button("Silence for today") {
-                                try? appModel.silenceForRestOfDay()
-                            }
-                            .buttonStyle(.borderedProminent)
-                        }
-                    }
+                if let appModel, !appModel.isIdlePending {
+                    quickActions(appModel: appModel)
                 }
 
                 TextField("Find or create a project", text: promptSearchText)
@@ -56,9 +42,14 @@ struct CheckInPromptContent: View {
                     }
                 }
 
+                if appModel?.isIdlePending == true {
+                    idleResolutionSection
+                }
+
                 CheckInProjectListView(
                     projects: appModel?.filteredPromptProjects ?? [],
-                    selectProjectForPrompt: selectProjectForPrompt
+                    selectedProjectID: appModel?.selectedPromptProjectID,
+                    onProjectTap: onProjectTap
                 )
             }
 
@@ -78,6 +69,104 @@ struct CheckInPromptContent: View {
         }
     }
 
+    private func quickActions(appModel: TempoAppModel) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Quick actions")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                ForEach(appModel.delayPresetMinutes, id: \.self) { preset in
+                    Button("Delay \(preset) min") {
+                        try? appModel.delayPrompt(byMinutes: preset)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Button("Silence for today") {
+                    try? appModel.silenceForRestOfDay()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var idleResolutionSection: some View {
+        if let appModel {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Resolve idle time")
+                    .font(.headline)
+
+                Text("\(TempoAppModel.formattedCompactDuration(appModel.pendingIdleDuration)) • \(appModel.pendingIdleReasonDisplayText)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    Button("Assign all to selected project") {
+                        guard let project = appModel.selectedPromptProject else {
+                            return
+                        }
+
+                        try? appModel.assignPendingIdle(to: project)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(appModel.selectedPromptProject == nil)
+
+                    Button("Discard idle time") {
+                        try? appModel.discardPendingIdle()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Split idle time")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    Stepper(
+                        value: Binding(
+                            get: { appModel.idleSplitFirstDurationMinutes },
+                            set: { appModel.idleSplitFirstDurationMinutes = $0 }
+                        ),
+                        in: appModel.firstIdleSegmentMinutesRange
+                    ) {
+                        Text("First segment (minutes): \(appModel.idleSplitFirstDurationMinutes)")
+                    }
+
+                    Picker(
+                        "Second project",
+                        selection: Binding(
+                            get: { appModel.idleSplitSecondProjectID ?? appModel.selectedPromptProjectID ?? UUID() },
+                            set: { appModel.idleSplitSecondProjectID = $0 }
+                        )
+                    ) {
+                        ForEach(appModel.recentPromptProjects) { project in
+                            Text(project.name).tag(project.id)
+                        }
+                    }
+
+                    Button("Split idle time") {
+                        guard
+                            let firstProject = appModel.selectedPromptProject,
+                            let secondProject = appModel.idleSplitSecondProject
+                        else {
+                            return
+                        }
+
+                        try? appModel.splitPendingIdle(
+                            firstProject: firstProject,
+                            firstDurationMinutes: appModel.idleSplitFirstDurationMinutes,
+                            secondProject: secondProject
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(appModel.selectedPromptProject == nil || appModel.idleSplitSecondProject == nil)
+                }
+            }
+        }
+    }
+
     private var promptSearchText: Binding<String> {
         Binding(
             get: { appModel?.promptSearchText ?? "" },
@@ -87,8 +176,16 @@ struct CheckInPromptContent: View {
         )
     }
 
-    private func selectProjectForPrompt(_ project: ProjectRecord) {
+    private func onProjectTap(_ project: ProjectRecord) {
         guard let appModel else {
+            return
+        }
+
+        if appModel.isIdlePending {
+            appModel.selectedPromptProjectID = project.id
+            if appModel.idleSplitSecondProjectID == nil {
+                appModel.idleSplitSecondProjectID = project.id
+            }
             return
         }
 

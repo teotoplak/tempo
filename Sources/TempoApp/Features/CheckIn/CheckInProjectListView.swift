@@ -2,26 +2,27 @@ import SwiftUI
 
 struct CheckInProjectListView: View {
     let projects: [ProjectRecord]
-    let selectProjectForPrompt: (ProjectRecord) -> Void
+    let selectedProjectID: UUID?
+    let onProjectTap: (ProjectRecord) -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(projects) { project in
                     Button {
-                        selectProjectForPrompt(project)
+                        onProjectTap(project)
                     } label: {
                         HStack {
                             Text(project.name)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                            Image(systemName: "arrow.up.right")
+                            Image(systemName: selectedProjectID == project.id ? "checkmark.circle.fill" : "arrow.up.right")
                                 .font(.caption.weight(.semibold))
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
                         .background(
-                            Color.primary.opacity(0.06),
+                            (selectedProjectID == project.id ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.06)),
                             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
                         )
                     }
