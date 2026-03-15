@@ -95,6 +95,39 @@ final class PersistenceModelTests: XCTestCase {
 
         XCTAssertEqual(appModel.currentProjectContextLabel, "Client Work")
     }
+
+    @MainActor
+    func testSplitPendingIdleRejectsOutOfRangeDuration() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedPersistenceClock(now: now)
+        )
+        let firstProject = ProjectRecord(name: "Client Work", sortOrder: 0)
+        let secondProject = ProjectRecord(name: "Admin", sortOrder: 1)
+        appModel.modelContext.insert(firstProject)
+        appModel.modelContext.insert(secondProject)
+        appModel.pendingIdleStartedAt = now.addingTimeInterval(-(12 * 60))
+        appModel.pendingIdleEndedAt = now
+        appModel.pendingIdleDuration = 12 * 60
+        appModel.isIdlePending = true
+
+        XCTAssertThrowsError(
+            try appModel.splitPendingIdle(
+                firstProject: firstProject,
+                firstDurationMinutes: 0,
+                secondProject: secondProject
+            )
+        )
+
+        XCTAssertThrowsError(
+            try appModel.splitPendingIdle(
+                firstProject: firstProject,
+                firstDurationMinutes: 12,
+                secondProject: secondProject
+            )
+        )
+    }
 }
 
 private struct FixedPersistenceClock: SchedulerClock {

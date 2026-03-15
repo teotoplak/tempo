@@ -79,6 +79,99 @@ final class CheckInCompletionTests: XCTestCase {
         XCTAssertFalse(appModel.checkInPromptState.isPresented)
     }
 
+    @MainActor
+    func testAssignPendingIdleCreatesIdleAssignedEntry() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now)
+        )
+        let project = ProjectRecord(name: "Client Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        appModel.schedulerStateRecord.pendingIdleStartedAt = now.addingTimeInterval(-(20 * 60))
+        appModel.schedulerStateRecord.pendingIdleEndedAt = now.addingTimeInterval(-(5 * 60))
+        appModel.schedulerStateRecord.pendingIdleReason = "inactivity"
+        appModel.schedulerStateRecord.idleResolvedAt = now
+        appModel.pendingIdleStartedAt = now.addingTimeInterval(-(20 * 60))
+        appModel.pendingIdleEndedAt = now.addingTimeInterval(-(5 * 60))
+        appModel.pendingIdleReason = "inactivity"
+        appModel.pendingIdleDuration = 15 * 60
+        appModel.isIdlePending = true
+
+        try appModel.assignPendingIdle(to: project)
+
+        let entries = try appModel.modelContext.fetch(FetchDescriptor<TimeEntryRecord>())
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].source, "idle-assigned")
+        XCTAssertEqual(entries[0].startAt, now.addingTimeInterval(-(20 * 60)))
+        XCTAssertEqual(entries[0].endAt, now.addingTimeInterval(-(5 * 60)))
+        XCTAssertEqual(appModel.schedulerStateRecord.nextCheckInAt, now.addingTimeInterval(25 * 60))
+        XCTAssertNil(appModel.schedulerStateRecord.pendingIdleStartedAt)
+    }
+
+    @MainActor
+    func testDiscardPendingIdleClearsPendingStateWithoutWritingEntry() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now)
+        )
+        appModel.schedulerStateRecord.pendingIdleStartedAt = now.addingTimeInterval(-(15 * 60))
+        appModel.schedulerStateRecord.pendingIdleEndedAt = now.addingTimeInterval(-(5 * 60))
+        appModel.schedulerStateRecord.pendingIdleReason = "screen-locked"
+        appModel.schedulerStateRecord.idleResolvedAt = now
+        appModel.pendingIdleStartedAt = now.addingTimeInterval(-(15 * 60))
+        appModel.pendingIdleEndedAt = now.addingTimeInterval(-(5 * 60))
+        appModel.pendingIdleReason = "screen-locked"
+        appModel.pendingIdleDuration = 10 * 60
+        appModel.isIdlePending = true
+
+        try appModel.discardPendingIdle()
+
+        let entries = try appModel.modelContext.fetch(FetchDescriptor<TimeEntryRecord>())
+        XCTAssertEqual(entries.count, 0)
+        XCTAssertNil(appModel.schedulerStateRecord.pendingIdleStartedAt)
+        XCTAssertEqual(appModel.schedulerStateRecord.nextCheckInAt, now.addingTimeInterval(25 * 60))
+    }
+
+    @MainActor
+    func testSplitPendingIdleCreatesContiguousEntries() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now)
+        )
+        let firstProject = ProjectRecord(name: "Client Work", sortOrder: 0)
+        let secondProject = ProjectRecord(name: "Admin", sortOrder: 1)
+        appModel.modelContext.insert(firstProject)
+        appModel.modelContext.insert(secondProject)
+        appModel.schedulerStateRecord.pendingIdleStartedAt = now.addingTimeInterval(-(18 * 60))
+        appModel.schedulerStateRecord.pendingIdleEndedAt = now.addingTimeInterval(-(3 * 60))
+        appModel.schedulerStateRecord.pendingIdleReason = "inactivity"
+        appModel.schedulerStateRecord.idleResolvedAt = now
+        appModel.pendingIdleStartedAt = now.addingTimeInterval(-(18 * 60))
+        appModel.pendingIdleEndedAt = now.addingTimeInterval(-(3 * 60))
+        appModel.pendingIdleReason = "inactivity"
+        appModel.pendingIdleDuration = 15 * 60
+        appModel.isIdlePending = true
+
+        try appModel.splitPendingIdle(
+            firstProject: firstProject,
+            firstDurationMinutes: 6,
+            secondProject: secondProject
+        )
+
+        let entries = try appModel.modelContext.fetch(
+            FetchDescriptor<TimeEntryRecord>(sortBy: [SortDescriptor(\.startAt)])
+        )
+        XCTAssertEqual(entries.count, 2)
+        XCTAssertEqual(entries.map(\.source), ["idle-split", "idle-split"])
+        XCTAssertEqual(entries[0].startAt, now.addingTimeInterval(-(18 * 60)))
+        XCTAssertEqual(entries[0].endAt, now.addingTimeInterval(-(12 * 60)))
+        XCTAssertEqual(entries[1].startAt, now.addingTimeInterval(-(12 * 60)))
+        XCTAssertEqual(entries[1].endAt, now.addingTimeInterval(-(3 * 60)))
+    }
+
     func testCompletionFlowRemainsSilent() throws {
         let rootURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

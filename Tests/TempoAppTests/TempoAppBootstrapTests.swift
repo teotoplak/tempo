@@ -87,6 +87,27 @@ final class TempoAppBootstrapTests: XCTestCase {
         XCTAssertEqual(model.pendingIdleDuration, 0)
     }
 
+    @MainActor
+    func testIdleResolutionPromptBlocksStandardCheckInCopy() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now)
+        )
+        model.pendingIdleStartedAt = now.addingTimeInterval(-(12 * 60))
+        model.pendingIdleEndedAt = now
+        model.pendingIdleReason = "screen-locked"
+        model.pendingIdleDuration = 12 * 60
+        model.isIdlePending = true
+        model.schedulerStateRecord.idleResolvedAt = now
+
+        model.refreshCheckInPromptState()
+
+        XCTAssertEqual(model.checkInPromptState.promptTitle, "Resolve idle time")
+        XCTAssertNotEqual(model.checkInPromptState.promptTitle, "What are you currently doing")
+        XCTAssertEqual(model.pendingIdleReasonDisplayText, "Screen locked")
+    }
+
     func testPackageManifestStaysLocalOnly() throws {
         let rootURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
