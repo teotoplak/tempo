@@ -7,6 +7,22 @@ protocol ProjectStore: AnyObject {}
 protocol SettingsStore: AnyObject {}
 protocol SchedulerStore: AnyObject {}
 
+struct CheckInPromptState: Equatable {
+    var isPresented: Bool
+    var elapsedDuration: TimeInterval
+    var isOverdue: Bool
+    var promptTitle: String
+    var supportingSubtitle: String
+
+    static let hidden = CheckInPromptState(
+        isPresented: false,
+        elapsedDuration: 0,
+        isOverdue: false,
+        promptTitle: "What are you currently doing",
+        supportingSubtitle: "Elapsed 0 min"
+    )
+}
+
 @MainActor
 @Observable
 final class TempoAppModel {
@@ -45,11 +61,13 @@ final class TempoAppModel {
     var nextCheckInAt: Date?
     var isPromptOverdue = false
     var accountableElapsedInterval: TimeInterval = 0
+    var checkInPromptState = CheckInPromptState.hidden
 
     private let clock: any SchedulerClock
     private let scheduler: PollingScheduler
     private var hasHandledInitialLaunch = false
     private var wakeObserver: NSObjectProtocol?
+    private var checkInPromptWindowController: CheckInPromptWindowController?
 
     init(
         modelContainer: ModelContainer? = nil,
@@ -90,6 +108,7 @@ final class TempoAppModel {
         self.projectStore = LocalProjectStore(modelContext: self.modelContext)
 
         apply(snapshot: scheduler.snapshot(for: self.schedulerStateRecord, settings: self.settings, eventDate: clock.now))
+        refreshCheckInPromptState()
     }
 
     func performInitialLaunchIfNeeded() {
@@ -112,6 +131,37 @@ final class TempoAppModel {
 
     func quit() {
         NSApplication.shared.terminate(nil)
+    }
+
+    func attachCheckInPromptWindowController(_ controller: CheckInPromptWindowController) {
+        checkInPromptWindowController = controller
+        controller.bind(appModel: self)
+        controller.update(with: checkInPromptState)
+    }
+
+    func refreshCheckInPromptState() {
+        let shouldPresent = isPromptOverdue
+        checkInPromptState = CheckInPromptState(
+            isPresented: shouldPresent,
+            elapsedDuration: accountableElapsedInterval,
+            isOverdue: isPromptOverdue,
+            promptTitle: "What are you currently doing",
+            supportingSubtitle: Self.supportingSubtitle(
+                elapsedDuration: accountableElapsedInterval,
+                isOverdue: isPromptOverdue
+            )
+        )
+        checkInPromptWindowController?.update(with: checkInPromptState)
+    }
+
+    func presentCheckInPromptIfNeeded() {
+        refreshCheckInPromptState()
+        checkInPromptWindowController?.update(with: checkInPromptState)
+    }
+
+    func dismissCheckInPrompt() {
+        checkInPromptState.isPresented = false
+        checkInPromptWindowController?.hide()
     }
 
     func createProject(named name: String) throws {
@@ -175,6 +225,7 @@ final class TempoAppModel {
 
         try? modelContext.save()
         apply(snapshot: result.snapshot)
+        refreshCheckInPromptState()
         launchState = .ready
     }
 
@@ -182,6 +233,23 @@ final class TempoAppModel {
         nextCheckInAt = snapshot.nextCheckInAt
         isPromptOverdue = snapshot.isPromptOverdue
         accountableElapsedInterval = snapshot.accountableElapsedInterval
+    }
+
+    static func formattedElapsedText(for elapsedDuration: TimeInterval) -> String {
+        let elapsedMinutes = max(Int(elapsedDuration / 60), 0)
+        return "Elapsed \(elapsedMinutes) min"
+    }
+
+    private static func supportingSubtitle(
+        elapsedDuration: TimeInterval,
+        isOverdue: Bool
+    ) -> String {
+        let elapsed = formattedElapsedText(for: elapsedDuration)
+        guard isOverdue else {
+            return elapsed
+        }
+
+        return "\(elapsed) · overdue"
     }
 }
 

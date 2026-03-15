@@ -5,15 +5,16 @@ import SwiftUI
 struct TempoApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var appModel = TempoAppModel()
-
-    private let workspaceWakeNotification = NSWorkspace.didWakeNotification
+    private let checkInPromptWindowController = CheckInPromptWindowController()
 
     var body: some Scene {
         MenuBarExtra("Tempo", systemImage: "clock") {
             MenuBarRootView(appModel: appModel)
                 .modelContainer(appModel.modelContainer)
                 .task {
+                    appModel.attachCheckInPromptWindowController(checkInPromptWindowController)
                     appModel.performInitialLaunchIfNeeded()
+                    appModel.presentCheckInPromptIfNeeded()
                 }
         }
         .menuBarExtraStyle(.window)
@@ -23,7 +24,9 @@ struct TempoApp: App {
                 .modelContainer(appModel.modelContainer)
                 .frame(minWidth: 900, minHeight: 560)
                 .task {
+                    appModel.attachCheckInPromptWindowController(checkInPromptWindowController)
                     appModel.performInitialLaunchIfNeeded()
+                    appModel.presentCheckInPromptIfNeeded()
                 }
         }
         .defaultSize(width: 1080, height: 680)
@@ -33,6 +36,7 @@ struct TempoApp: App {
             }
 
             appModel.handleSceneActivation()
+            appModel.presentCheckInPromptIfNeeded()
         }
     }
 }
