@@ -38,11 +38,11 @@
 
 ### Idle Handling
 
-- [ ] **IDLE-01**: App detects when the user has been idle past the configured keyboard/mouse inactivity threshold.
-- [ ] **IDLE-02**: App detects when the screen is locked.
-- [ ] **IDLE-03**: Idle or locked-screen time is excluded from active work logging by default.
-- [ ] **IDLE-04**: When the user returns from idle, app prompts them to account for the idle period.
-- [ ] **IDLE-05**: User can assign idle time to a project, discard it, or split it across projects.
+- [x] **IDLE-01**: App detects when the user has been idle past the configured keyboard/mouse inactivity threshold.
+- [x] **IDLE-02**: App detects when the screen is locked.
+- [x] **IDLE-03**: Idle or locked-screen time is excluded from active work logging by default.
+- [x] **IDLE-04**: When the user returns from idle, app prompts them to account for the idle period.
+- [x] **IDLE-05**: User can assign idle time to a project, discard it, or split it across projects.
 
 ### Analytics
 
@@ -124,11 +124,11 @@
 | SILN-02 | Phase 3 | Pending |
 | SILN-03 | Phase 3 | Pending |
 | SILN-04 | Phase 3 | Pending |
-| IDLE-01 | Phase 4 | Pending |
-| IDLE-02 | Phase 4 | Pending |
-| IDLE-03 | Phase 4 | Pending |
-| IDLE-04 | Phase 4 | Pending |
-| IDLE-05 | Phase 4 | Pending |
+| IDLE-01 | Phase 4 | Complete |
+| IDLE-02 | Phase 4 | Complete |
+| IDLE-03 | Phase 4 | Complete |
+| IDLE-04 | Phase 4 | Complete |
+| IDLE-05 | Phase 4 | Complete |
 | ANLY-01 | Phase 5 | Pending |
 | ANLY-02 | Phase 5 | Pending |
 | ANLY-03 | Phase 5 | Pending |
@@ -157,4 +157,4 @@
 
 ---
 *Requirements defined: 2026-03-15*
-*Last updated: 2026-03-15 after Phase 2 execution*
+*Last updated: 2026-03-16 after Phase 4 execution*

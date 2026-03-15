@@ -9,7 +9,7 @@ The roadmap starts by establishing a reliable native macOS foundation for local 
 - [x] **Phase 1: Foundation and Timing Engine** - Build the native menu bar shell, local data model, settings, and polling engine that define the product’s correctness baseline.
 - [x] **Phase 2: Check-In Logging Flow** - Deliver the full-screen prompt and project-based time attribution flow that turns polling into actual tracked entries. (completed 2026-03-15)
 - [x] **Phase 3: Deferrals, Silence, and Menu Bar Control** - Add postponement, silence controls, and menu bar status/actions for daily usability. (completed 2026-03-16)
-- [ ] **Phase 4: Idle and Locked-Screen Reconciliation** - Prevent incorrect active tracking during inactivity and let the user resolve idle time explicitly.
+- [x] **Phase 4: Idle and Locked-Screen Reconciliation** - Prevent incorrect active tracking during inactivity and let the user resolve idle time explicitly. (completed 2026-03-16)
 - [ ] **Phase 5: Analytics and CSV Export** - Provide reporting views and portable export so tracked data becomes useful for reflection.
 - [ ] **Phase 6: Launch and Correctness Hardening** - Finish launch-at-login support and tighten timing and workflow reliability across day boundaries.
 
@@ -72,11 +72,11 @@ Plans:
   2. Idle and locked-screen periods do not inflate active tracked work time automatically.
   3. When the user returns, app presents the idle duration and resolution choices.
   4. User can assign, discard, or split idle time and the resulting time ledger remains internally consistent.
-**Plans**: 2 plans
+**Plans**: 2/2 plans complete
 
 Plans:
-- [ ] 04-01: Implement idle and lock detection with suspended active tracking.
-- [ ] 04-02: Build the idle-resolution flow for assign, discard, and split actions.
+- [x] 04-01: Implement idle and lock detection with suspended active tracking.
+- [x] 04-02: Build the idle-resolution flow for assign, discard, and split actions.
 
 ### Phase 5: Analytics and CSV Export
 **Goal**: Make tracked data reviewable through analytics views and exportable for use outside the app.
@@ -117,6 +117,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Foundation and Timing Engine | 3/3 | Complete | 2026-03-15 |
 | 2. Check-In Logging Flow | 3/3 | Complete   | 2026-03-15 |
 | 3. Deferrals, Silence, and Menu Bar Control | 3/3 | Complete | 2026-03-16 |
-| 4. Idle and Locked-Screen Reconciliation | 0/2 | Not started | - |
+| 4. Idle and Locked-Screen Reconciliation | 2/2 | Complete | 2026-03-16 |
 | 5. Analytics and CSV Export | 0/3 | Not started | - |
 | 6. Launch and Correctness Hardening | 0/2 | Not started | - |
