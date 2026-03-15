@@ -50,6 +50,43 @@ final class TempoAppBootstrapTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(model.accountableElapsedInterval, 25 * 60)
     }
 
+    @MainActor
+    func testDetectInactivityIfNeededMarksIdlePending() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now)
+        )
+        model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(30 * 60))
+        model.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(-(5 * 60))
+
+        model.detectInactivityIfNeeded(activityDate: now.addingTimeInterval(-(7 * 60)))
+
+        XCTAssertTrue(model.isIdlePending)
+        XCTAssertFalse(model.checkInPromptState.isPresented)
+        XCTAssertEqual(model.accountableElapsedInterval, 0)
+        XCTAssertEqual(model.pendingIdleDuration, 7 * 60)
+    }
+
+    @MainActor
+    func testHandleScreenLockMarksIdlePending() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now)
+        )
+        model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(20 * 60))
+        model.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(5 * 60)
+
+        model.handleScreenLock()
+
+        XCTAssertTrue(model.isIdlePending)
+        XCTAssertEqual(model.pendingIdleReason, "screen-locked")
+        XCTAssertFalse(model.checkInPromptState.isPresented)
+        XCTAssertEqual(model.accountableElapsedInterval, 0)
+        XCTAssertEqual(model.pendingIdleDuration, 0)
+    }
+
     func testPackageManifestStaysLocalOnly() throws {
         let rootURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

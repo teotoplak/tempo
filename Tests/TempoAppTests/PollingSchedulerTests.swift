@@ -201,6 +201,89 @@ final class PollingSchedulerTests: XCTestCase {
         XCTAssertFalse(result.snapshot.isSilenced)
         XCTAssertNil(result.silenceEndsAt)
     }
+
+    func testBeginIdleIntervalSuspendsAccountableElapsed() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: now))
+        let settings = AppSettingsRecord()
+        let state = SchedulerStateRecord(
+            lastCheckInAt: now.addingTimeInterval(-(40 * 60)),
+            nextCheckInAt: now.addingTimeInterval(-(15 * 60)),
+            lastAppLaunchAt: now.addingTimeInterval(-(10 * 60))
+        )
+
+        let result = scheduler.beginIdleInterval(
+            state: state,
+            settings: settings,
+            eventDate: now,
+            reason: "inactivity"
+        )
+
+        XCTAssertTrue(result.snapshot.isIdlePending)
+        XCTAssertEqual(result.pendingIdleStartedAt, now)
+        XCTAssertEqual(result.pendingIdleEndedAt, now)
+        XCTAssertEqual(result.pendingIdleReason, "inactivity")
+        XCTAssertEqual(result.accountableElapsedInterval, 0)
+        XCTAssertNil(result.nextCheckInAt)
+    }
+
+    func testScreenLockCreatesPendingIdleInterval() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: now))
+        let settings = AppSettingsRecord()
+        let state = SchedulerStateRecord(
+            lastCheckInAt: now.addingTimeInterval(-(25 * 60)),
+            nextCheckInAt: now.addingTimeInterval(5 * 60),
+            lastAppLaunchAt: now.addingTimeInterval(-(60)),
+            delayedUntilAt: now.addingTimeInterval(15 * 60),
+            delayedFromPromptAt: now,
+            silencedAt: now.addingTimeInterval(-(30)),
+            silenceEndsAt: now.addingTimeInterval(60 * 60)
+        )
+
+        let result = scheduler.beginIdleInterval(
+            state: state,
+            settings: settings,
+            eventDate: now,
+            reason: "screen-locked"
+        )
+
+        XCTAssertTrue(result.snapshot.isIdlePending)
+        XCTAssertEqual(result.pendingIdleReason, "screen-locked")
+        XCTAssertNil(result.delayedUntilAt)
+        XCTAssertNil(result.silenceEndsAt)
+        XCTAssertFalse(result.snapshot.isPromptDelayed)
+        XCTAssertFalse(result.snapshot.isSilenced)
+    }
+
+    func testResolveReturnedIdleStateKeepsPendingIdleUnscheduled() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: now))
+        let settings = AppSettingsRecord()
+        let state = SchedulerStateRecord(
+            lastCheckInAt: now.addingTimeInterval(-(45 * 60)),
+            lastAppLaunchAt: now.addingTimeInterval(-(10 * 60)),
+            idleBeganAt: now.addingTimeInterval(-(12 * 60)),
+            idleDetectedAt: now.addingTimeInterval(-(10 * 60)),
+            pendingIdleStartedAt: now.addingTimeInterval(-(12 * 60)),
+            pendingIdleEndedAt: now.addingTimeInterval(-(10 * 60)),
+            pendingIdleReason: "inactivity"
+        )
+
+        let result = scheduler.resolveReturnedIdleState(
+            state: state,
+            settings: settings,
+            eventDate: now
+        )
+
+        XCTAssertTrue(result.snapshot.isIdlePending)
+        XCTAssertEqual(result.pendingIdleStartedAt, now.addingTimeInterval(-(12 * 60)))
+        XCTAssertEqual(result.pendingIdleEndedAt, now)
+        XCTAssertEqual(result.pendingIdleReason, "inactivity")
+        XCTAssertEqual(result.accountableElapsedInterval, 0)
+        XCTAssertNil(result.nextCheckInAt)
+        XCTAssertEqual(result.idleResolvedAt, now)
+    }
 }
 
 private struct FixedSchedulerClock: SchedulerClock {
