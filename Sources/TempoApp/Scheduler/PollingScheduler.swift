@@ -4,10 +4,15 @@ struct PollingSchedulerSnapshot: Equatable {
     var nextCheckInAt: Date?
     var isPromptOverdue: Bool
     var accountableElapsedInterval: TimeInterval
+    var accountableWorkEndAt: Date?
     var isPromptDelayed: Bool
     var delayedUntilAt: Date?
     var isSilenced: Bool
     var silenceEndsAt: Date?
+    var isIdlePending: Bool
+    var pendingIdleStartedAt: Date?
+    var pendingIdleEndedAt: Date?
+    var pendingIdleReason: String?
 }
 
 struct PollingSchedulerResult {
@@ -15,8 +20,15 @@ struct PollingSchedulerResult {
     var nextCheckInAt: Date?
     var isPromptOverdue: Bool
     var accountableElapsedInterval: TimeInterval
+    var accountableWorkEndAt: Date?
     var lastCheckInAt: Date?
     var lastAppLaunchAt: Date
+    var idleBeganAt: Date?
+    var idleDetectedAt: Date?
+    var idleResolvedAt: Date?
+    var pendingIdleStartedAt: Date?
+    var pendingIdleEndedAt: Date?
+    var pendingIdleReason: String?
     var delayedUntilAt: Date?
     var delayedFromPromptAt: Date?
     var silencedAt: Date?
@@ -46,14 +58,42 @@ final class PollingScheduler {
     ) -> PollingSchedulerResult {
         let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
 
+        if let pendingIdleStartedAt = state.pendingIdleStartedAt {
+            return makeResult(
+                nextCheckInAt: nil,
+                isPromptOverdue: false,
+                accountableElapsedInterval: 0,
+                accountableWorkEndAt: pendingIdleStartedAt,
+                lastCheckInAt: state.lastCheckInAt,
+                lastAppLaunchAt: eventDate,
+                idleBeganAt: state.idleBeganAt,
+                idleDetectedAt: state.idleDetectedAt,
+                idleResolvedAt: state.idleResolvedAt,
+                pendingIdleStartedAt: pendingIdleStartedAt,
+                pendingIdleEndedAt: state.pendingIdleEndedAt,
+                pendingIdleReason: state.pendingIdleReason,
+                delayedUntilAt: nil,
+                delayedFromPromptAt: nil,
+                silencedAt: nil,
+                silenceEndsAt: nil
+            )
+        }
+
         if let silenceEndsAt = state.silenceEndsAt {
             if eventDate < silenceEndsAt {
                 return makeResult(
                     nextCheckInAt: silenceEndsAt,
                     isPromptOverdue: false,
                     accountableElapsedInterval: 0,
+                    accountableWorkEndAt: eventDate,
                     lastCheckInAt: state.lastCheckInAt,
                     lastAppLaunchAt: eventDate,
+                    idleBeganAt: state.idleBeganAt,
+                    idleDetectedAt: state.idleDetectedAt,
+                    idleResolvedAt: state.idleResolvedAt,
+                    pendingIdleStartedAt: nil,
+                    pendingIdleEndedAt: nil,
+                    pendingIdleReason: nil,
                     delayedUntilAt: nil,
                     delayedFromPromptAt: nil,
                     silencedAt: state.silencedAt,
@@ -66,8 +106,15 @@ final class PollingScheduler {
                 nextCheckInAt: nextCheckInAt,
                 isPromptOverdue: false,
                 accountableElapsedInterval: pollingInterval,
+                accountableWorkEndAt: nextCheckInAt,
                 lastCheckInAt: state.lastCheckInAt,
                 lastAppLaunchAt: eventDate,
+                idleBeganAt: state.idleBeganAt,
+                idleDetectedAt: state.idleDetectedAt,
+                idleResolvedAt: state.idleResolvedAt,
+                pendingIdleStartedAt: nil,
+                pendingIdleEndedAt: nil,
+                pendingIdleReason: nil,
                 delayedUntilAt: nil,
                 delayedFromPromptAt: nil,
                 silencedAt: nil,
@@ -83,8 +130,15 @@ final class PollingScheduler {
                     nextCheckInAt: delayedUntilAt,
                     isPromptOverdue: false,
                     accountableElapsedInterval: max(eventDate.timeIntervalSince(referenceStart), pollingInterval),
+                    accountableWorkEndAt: eventDate,
                     lastCheckInAt: state.lastCheckInAt,
                     lastAppLaunchAt: eventDate,
+                    idleBeganAt: state.idleBeganAt,
+                    idleDetectedAt: state.idleDetectedAt,
+                    idleResolvedAt: state.idleResolvedAt,
+                    pendingIdleStartedAt: nil,
+                    pendingIdleEndedAt: nil,
+                    pendingIdleReason: nil,
                     delayedUntilAt: delayedUntilAt,
                     delayedFromPromptAt: state.delayedFromPromptAt,
                     silencedAt: nil,
@@ -96,8 +150,15 @@ final class PollingScheduler {
                 nextCheckInAt: delayedUntilAt,
                 isPromptOverdue: true,
                 accountableElapsedInterval: max(eventDate.timeIntervalSince(referenceStart), pollingInterval),
+                accountableWorkEndAt: eventDate,
                 lastCheckInAt: state.lastCheckInAt,
                 lastAppLaunchAt: eventDate,
+                idleBeganAt: state.idleBeganAt,
+                idleDetectedAt: state.idleDetectedAt,
+                idleResolvedAt: state.idleResolvedAt,
+                pendingIdleStartedAt: nil,
+                pendingIdleEndedAt: nil,
+                pendingIdleReason: nil,
                 delayedUntilAt: nil,
                 delayedFromPromptAt: nil,
                 silencedAt: nil,
@@ -111,8 +172,15 @@ final class PollingScheduler {
                 nextCheckInAt: nextCheckInAt,
                 isPromptOverdue: false,
                 accountableElapsedInterval: pollingInterval,
+                accountableWorkEndAt: nextCheckInAt,
                 lastCheckInAt: state.lastCheckInAt,
                 lastAppLaunchAt: eventDate,
+                idleBeganAt: state.idleBeganAt,
+                idleDetectedAt: state.idleDetectedAt,
+                idleResolvedAt: state.idleResolvedAt,
+                pendingIdleStartedAt: nil,
+                pendingIdleEndedAt: nil,
+                pendingIdleReason: nil,
                 delayedUntilAt: nil,
                 delayedFromPromptAt: nil,
                 silencedAt: nil,
@@ -127,8 +195,15 @@ final class PollingScheduler {
                 nextCheckInAt: existingNextCheckInAt,
                 isPromptOverdue: true,
                 accountableElapsedInterval: elapsedInterval,
+                accountableWorkEndAt: eventDate,
                 lastCheckInAt: state.lastCheckInAt,
                 lastAppLaunchAt: eventDate,
+                idleBeganAt: state.idleBeganAt,
+                idleDetectedAt: state.idleDetectedAt,
+                idleResolvedAt: state.idleResolvedAt,
+                pendingIdleStartedAt: nil,
+                pendingIdleEndedAt: nil,
+                pendingIdleReason: nil,
                 delayedUntilAt: nil,
                 delayedFromPromptAt: nil,
                 silencedAt: nil,
@@ -142,8 +217,15 @@ final class PollingScheduler {
             nextCheckInAt: existingNextCheckInAt,
             isPromptOverdue: false,
             accountableElapsedInterval: elapsedInterval,
+            accountableWorkEndAt: existingNextCheckInAt,
             lastCheckInAt: state.lastCheckInAt,
             lastAppLaunchAt: eventDate,
+            idleBeganAt: state.idleBeganAt,
+            idleDetectedAt: state.idleDetectedAt,
+            idleResolvedAt: state.idleResolvedAt,
+            pendingIdleStartedAt: nil,
+            pendingIdleEndedAt: nil,
+            pendingIdleReason: nil,
             delayedUntilAt: nil,
             delayedFromPromptAt: nil,
             silencedAt: nil,
@@ -167,8 +249,15 @@ final class PollingScheduler {
             nextCheckInAt: delayedUntilAt,
             isPromptOverdue: false,
             accountableElapsedInterval: max(delayDate.timeIntervalSince(referenceStart), pollingInterval),
+            accountableWorkEndAt: delayDate,
             lastCheckInAt: state.lastCheckInAt,
             lastAppLaunchAt: delayDate,
+            idleBeganAt: state.idleBeganAt,
+            idleDetectedAt: state.idleDetectedAt,
+            idleResolvedAt: state.idleResolvedAt,
+            pendingIdleStartedAt: nil,
+            pendingIdleEndedAt: nil,
+            pendingIdleReason: nil,
             delayedUntilAt: delayedUntilAt,
             delayedFromPromptAt: promptReference,
             silencedAt: nil,
@@ -187,8 +276,15 @@ final class PollingScheduler {
             nextCheckInAt: silenceEndsAt,
             isPromptOverdue: false,
             accountableElapsedInterval: 0,
+            accountableWorkEndAt: eventDate,
             lastCheckInAt: state.lastCheckInAt,
             lastAppLaunchAt: eventDate,
+            idleBeganAt: state.idleBeganAt,
+            idleDetectedAt: state.idleDetectedAt,
+            idleResolvedAt: state.idleResolvedAt,
+            pendingIdleStartedAt: nil,
+            pendingIdleEndedAt: nil,
+            pendingIdleReason: nil,
             delayedUntilAt: nil,
             delayedFromPromptAt: nil,
             silencedAt: eventDate,
@@ -208,8 +304,15 @@ final class PollingScheduler {
             nextCheckInAt: nextCheckInAt,
             isPromptOverdue: false,
             accountableElapsedInterval: pollingInterval,
+            accountableWorkEndAt: nextCheckInAt,
             lastCheckInAt: state.lastCheckInAt,
             lastAppLaunchAt: eventDate,
+            idleBeganAt: state.idleBeganAt,
+            idleDetectedAt: state.idleDetectedAt,
+            idleResolvedAt: state.idleResolvedAt,
+            pendingIdleStartedAt: nil,
+            pendingIdleEndedAt: nil,
+            pendingIdleReason: nil,
             delayedUntilAt: nil,
             delayedFromPromptAt: nil,
             silencedAt: nil,
@@ -229,8 +332,75 @@ final class PollingScheduler {
             nextCheckInAt: nextCheckInAt,
             isPromptOverdue: false,
             accountableElapsedInterval: pollingInterval,
+            accountableWorkEndAt: nextCheckInAt,
             lastCheckInAt: completionDate,
             lastAppLaunchAt: completionDate,
+            idleBeganAt: nil,
+            idleDetectedAt: nil,
+            idleResolvedAt: nil,
+            pendingIdleStartedAt: nil,
+            pendingIdleEndedAt: nil,
+            pendingIdleReason: nil,
+            delayedUntilAt: nil,
+            delayedFromPromptAt: nil,
+            silencedAt: nil,
+            silenceEndsAt: nil
+        )
+    }
+
+    func beginIdleInterval(
+        state: SchedulerStateRecord,
+        settings: AppSettingsRecord,
+        eventDate: Date,
+        reason: String
+    ) -> PollingSchedulerResult {
+        let idleStart = state.pendingIdleStartedAt ?? eventDate
+        let idleEnd = max(state.pendingIdleEndedAt ?? eventDate, eventDate)
+
+        return makeResult(
+            nextCheckInAt: nil,
+            isPromptOverdue: false,
+            accountableElapsedInterval: 0,
+            accountableWorkEndAt: idleStart,
+            lastCheckInAt: state.lastCheckInAt,
+            lastAppLaunchAt: eventDate,
+            idleBeganAt: state.idleBeganAt ?? idleStart,
+            idleDetectedAt: eventDate,
+            idleResolvedAt: nil,
+            pendingIdleStartedAt: idleStart,
+            pendingIdleEndedAt: idleEnd,
+            pendingIdleReason: reason,
+            delayedUntilAt: nil,
+            delayedFromPromptAt: nil,
+            silencedAt: nil,
+            silenceEndsAt: nil
+        )
+    }
+
+    func resolveReturnedIdleState(
+        state: SchedulerStateRecord,
+        settings: AppSettingsRecord,
+        eventDate: Date
+    ) -> PollingSchedulerResult {
+        guard let pendingIdleStartedAt = state.pendingIdleStartedAt else {
+            return updateState(state, settings: settings, eventDate: eventDate)
+        }
+
+        let pendingIdleEndedAt = max(state.pendingIdleEndedAt ?? pendingIdleStartedAt, eventDate)
+
+        return makeResult(
+            nextCheckInAt: nil,
+            isPromptOverdue: false,
+            accountableElapsedInterval: 0,
+            accountableWorkEndAt: pendingIdleStartedAt,
+            lastCheckInAt: state.lastCheckInAt,
+            lastAppLaunchAt: eventDate,
+            idleBeganAt: state.idleBeganAt ?? pendingIdleStartedAt,
+            idleDetectedAt: state.idleDetectedAt ?? pendingIdleStartedAt,
+            idleResolvedAt: nil,
+            pendingIdleStartedAt: pendingIdleStartedAt,
+            pendingIdleEndedAt: pendingIdleEndedAt,
+            pendingIdleReason: state.pendingIdleReason,
             delayedUntilAt: nil,
             delayedFromPromptAt: nil,
             silencedAt: nil,
@@ -257,11 +427,18 @@ final class PollingScheduler {
     }
 
     private func makeResult(
-        nextCheckInAt: Date,
+        nextCheckInAt: Date?,
         isPromptOverdue: Bool,
         accountableElapsedInterval: TimeInterval,
+        accountableWorkEndAt: Date?,
         lastCheckInAt: Date?,
         lastAppLaunchAt: Date,
+        idleBeganAt: Date?,
+        idleDetectedAt: Date?,
+        idleResolvedAt: Date?,
+        pendingIdleStartedAt: Date?,
+        pendingIdleEndedAt: Date?,
+        pendingIdleReason: String?,
         delayedUntilAt: Date?,
         delayedFromPromptAt: Date?,
         silencedAt: Date?,
@@ -271,10 +448,15 @@ final class PollingScheduler {
             nextCheckInAt: nextCheckInAt,
             isPromptOverdue: isPromptOverdue,
             accountableElapsedInterval: accountableElapsedInterval,
+            accountableWorkEndAt: accountableWorkEndAt,
             isPromptDelayed: delayedUntilAt != nil,
             delayedUntilAt: delayedUntilAt,
             isSilenced: silenceEndsAt != nil,
-            silenceEndsAt: silenceEndsAt
+            silenceEndsAt: silenceEndsAt,
+            isIdlePending: pendingIdleStartedAt != nil,
+            pendingIdleStartedAt: pendingIdleStartedAt,
+            pendingIdleEndedAt: pendingIdleEndedAt,
+            pendingIdleReason: pendingIdleReason
         )
 
         return PollingSchedulerResult(
@@ -282,8 +464,15 @@ final class PollingScheduler {
             nextCheckInAt: nextCheckInAt,
             isPromptOverdue: isPromptOverdue,
             accountableElapsedInterval: accountableElapsedInterval,
+            accountableWorkEndAt: accountableWorkEndAt,
             lastCheckInAt: lastCheckInAt,
             lastAppLaunchAt: lastAppLaunchAt,
+            idleBeganAt: idleBeganAt,
+            idleDetectedAt: idleDetectedAt,
+            idleResolvedAt: idleResolvedAt,
+            pendingIdleStartedAt: pendingIdleStartedAt,
+            pendingIdleEndedAt: pendingIdleEndedAt,
+            pendingIdleReason: pendingIdleReason,
             delayedUntilAt: delayedUntilAt,
             delayedFromPromptAt: delayedFromPromptAt,
             silencedAt: silencedAt,
