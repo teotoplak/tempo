@@ -8,18 +8,18 @@
 ### Projects
 
 - [x] **PROJ-01**: User can create a project from the main app interface.
-- [ ] **PROJ-02**: User can select from existing projects during a check-in.
-- [ ] **PROJ-03**: User can create a new project inline during a check-in without leaving the popup.
+- [x] **PROJ-02**: User can select from existing projects during a check-in.
+- [x] **PROJ-03**: User can create a new project inline during a check-in without leaving the popup.
 - [x] **PROJ-04**: Projects are stored and presented as a flat list with no hierarchy.
 
 ### Polling Check-In
 
 - [x] **POLL-01**: App shows a check-in prompt at the configured interval, with a default interval of 25 minutes.
-- [ ] **POLL-02**: Check-in prompt appears as a full-screen UI intended to capture attention.
-- [ ] **POLL-03**: Check-in prompt does not block normal keyboard or mouse input outside its own controls.
-- [ ] **POLL-04**: Check-in prompt displays the existing project list.
-- [ ] **POLL-05**: Check-in prompt shows the elapsed time since the last completed check-in.
-- [ ] **POLL-06**: Selecting a project logs the elapsed time block to that project.
+- [x] **POLL-02**: Check-in prompt appears as a full-screen UI intended to capture attention.
+- [x] **POLL-03**: Check-in prompt does not block normal keyboard or mouse input outside its own controls.
+- [x] **POLL-04**: Check-in prompt displays the existing project list.
+- [x] **POLL-05**: Check-in prompt shows the elapsed time since the last completed check-in.
+- [x] **POLL-06**: Selecting a project logs the elapsed time block to that project.
 - [ ] **POLL-07**: Check-in prompt includes a delay action.
 - [ ] **POLL-08**: Check-in prompt includes a silence-for-rest-of-day action.
 
@@ -77,7 +77,7 @@
 
 - [x] **DATA-01**: All projects, settings, and tracked time are stored locally on the user’s Mac.
 - [x] **DATA-02**: App does not require cloud sync or any network connectivity to function.
-- [ ] **UX-01**: App does not play sounds for prompts, confirmations, or alerts.
+- [x] **UX-01**: App does not play sounds for prompts, confirmations, or alerts.
 
 ## v2 Requirements
 
@@ -106,15 +106,15 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | PROJ-01 | Phase 1 | Completed |
-| PROJ-02 | Phase 2 | Pending |
-| PROJ-03 | Phase 2 | Pending |
+| PROJ-02 | Phase 2 | Complete |
+| PROJ-03 | Phase 2 | Complete |
 | PROJ-04 | Phase 1 | Completed |
 | POLL-01 | Phase 1 | Completed |
-| POLL-02 | Phase 2 | Pending |
-| POLL-03 | Phase 2 | Pending |
-| POLL-04 | Phase 2 | Pending |
-| POLL-05 | Phase 2 | Pending |
-| POLL-06 | Phase 2 | Pending |
+| POLL-02 | Phase 2 | Complete |
+| POLL-03 | Phase 2 | Complete |
+| POLL-04 | Phase 2 | Complete |
+| POLL-05 | Phase 2 | Complete |
+| POLL-06 | Phase 2 | Complete |
 | POLL-07 | Phase 3 | Pending |
 | POLL-08 | Phase 3 | Pending |
 | DELY-01 | Phase 3 | Pending |
@@ -148,7 +148,7 @@
 | SETG-04 | Phase 6 | Pending |
 | DATA-01 | Phase 1 | Completed |
 | DATA-02 | Phase 1 | Completed |
-| UX-01 | Phase 2 | Pending |
+| UX-01 | Phase 2 | Complete |
 
 **Coverage:**
 - v1 requirements: 43 total
@@ -157,4 +157,4 @@
 
 ---
 *Requirements defined: 2026-03-15*
-*Last updated: 2026-03-15 after initial definition*
+*Last updated: 2026-03-15 after Phase 2 execution*

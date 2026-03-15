@@ -7,7 +7,7 @@ The roadmap starts by establishing a reliable native macOS foundation for local 
 ## Phases
 
 - [x] **Phase 1: Foundation and Timing Engine** - Build the native menu bar shell, local data model, settings, and polling engine that define the product’s correctness baseline.
-- [ ] **Phase 2: Check-In Logging Flow** - Deliver the full-screen prompt and project-based time attribution flow that turns polling into actual tracked entries.
+- [x] **Phase 2: Check-In Logging Flow** - Deliver the full-screen prompt and project-based time attribution flow that turns polling into actual tracked entries. (completed 2026-03-15)
 - [ ] **Phase 3: Deferrals, Silence, and Menu Bar Control** - Add postponement, silence controls, and menu bar status/actions for daily usability.
 - [ ] **Phase 4: Idle and Locked-Screen Reconciliation** - Prevent incorrect active tracking during inactivity and let the user resolve idle time explicitly.
 - [ ] **Phase 5: Analytics and CSV Export** - Provide reporting views and portable export so tracked data becomes useful for reflection.
@@ -40,12 +40,12 @@ Plans:
   2. Prompt shows the elapsed time since the last completed check-in and the available projects.
   3. User can pick an existing project or create a new one inline from the prompt.
   4. Selecting a project writes the elapsed time block correctly without playing any sound.
-**Plans**: 3 plans
+**Plans**: 3/3 plans complete
 
 Plans:
-- [ ] 02-01: Implement the full-screen check-in presentation and timing context display.
-- [ ] 02-02: Add project selection and inline project creation inside the prompt.
-- [ ] 02-03: Persist completed time entries from check-ins and verify silent behavior.
+- [x] 02-01: Implement the full-screen check-in presentation and timing context display.
+- [x] 02-02: Add project selection and inline project creation inside the prompt.
+- [x] 02-03: Persist completed time entries from check-ins and verify silent behavior.
 
 ### Phase 3: Deferrals, Silence, and Menu Bar Control
 **Goal**: Add daily-use controls that let the user delay or silence polling while keeping current status visible and accessible from the menu bar.
@@ -115,7 +115,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation and Timing Engine | 3/3 | Complete | 2026-03-15 |
-| 2. Check-In Logging Flow | 0/3 | Not started | - |
+| 2. Check-In Logging Flow | 3/3 | Complete   | 2026-03-15 |
 | 3. Deferrals, Silence, and Menu Bar Control | 0/3 | Not started | - |
 | 4. Idle and Locked-Screen Reconciliation | 0/2 | Not started | - |
 | 5. Analytics and CSV Export | 0/3 | Not started | - |
