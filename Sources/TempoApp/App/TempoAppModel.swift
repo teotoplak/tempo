@@ -66,6 +66,7 @@ final class TempoAppModel {
 
     private let clock: any SchedulerClock
     private let scheduler: PollingScheduler
+    private let schedulerStateStore: SchedulerStateStore
     private var hasHandledInitialLaunch = false
     private var wakeObserver: NSObjectProtocol?
     private var checkInPromptWindowController: CheckInPromptWindowController?
@@ -104,6 +105,7 @@ final class TempoAppModel {
         }
 
         let schedulerStateStore = SchedulerStateStore(modelContext: self.modelContext)
+        self.schedulerStateStore = schedulerStateStore
         self.settingsStore = LocalSettingsStore(record: self.settings)
         self.schedulerStore = schedulerStateStore
         self.projectStore = LocalProjectStore(modelContext: self.modelContext)
@@ -213,10 +215,39 @@ final class TempoAppModel {
     }
 
     func createProject(named name: String) throws {
-        let nextSortOrder = nextProjectSortOrder()
-        let project = ProjectRecord(name: name, sortOrder: nextSortOrder)
-        modelContext.insert(project)
+        _ = try createProjectRecord(named: name)
+    }
+
+    func selectProjectForPrompt(_ project: ProjectRecord) throws {
+        let completionDate = clock.now
+        let entryEndAt = completionDate
+        let entryStartAt = entryEndAt.addingTimeInterval(-accountableElapsedInterval)
+        let timeEntry = TimeEntryRecord(
+            project: project,
+            startAt: entryStartAt,
+            endAt: entryEndAt,
+            source: "check-in"
+        )
+        modelContext.insert(timeEntry)
         try modelContext.save()
+
+        let completionResult = scheduler.completeCheckIn(
+            state: schedulerStateRecord,
+            settings: settings,
+            completionDate: completionDate
+        )
+        schedulerStateStore.apply(completionResult, to: schedulerStateRecord)
+        try schedulerStateStore.save(schedulerStateRecord)
+
+        apply(snapshot: completionResult.snapshot)
+        promptSearchText = ""
+        refreshCheckInPromptState()
+        dismissCheckInPrompt()
+    }
+
+    func createAndSelectProjectForPrompt(named name: String) throws {
+        let project = try createProjectRecord(named: name)
+        try selectProjectForPrompt(project)
     }
 
     func renameProject(_ project: ProjectRecord, to newName: String) throws {
@@ -242,6 +273,19 @@ final class TempoAppModel {
         let descriptor = FetchDescriptor<ProjectRecord>(sortBy: [SortDescriptor(\.sortOrder, order: .reverse)])
         let currentHighest = try? modelContext.fetch(descriptor).first?.sortOrder
         return (currentHighest ?? -1) + 1
+    }
+
+    private func createProjectRecord(named name: String) throws -> ProjectRecord {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw ProjectValidationError.emptyName
+        }
+
+        let nextSortOrder = nextProjectSortOrder()
+        let project = ProjectRecord(name: trimmedName, sortOrder: nextSortOrder)
+        modelContext.insert(project)
+        try modelContext.save()
+        return project
     }
 
     private func fetchProjects() -> [ProjectRecord] {
@@ -288,11 +332,8 @@ final class TempoAppModel {
             eventDate: eventDate
         )
 
-        schedulerStateRecord.lastAppLaunchAt = result.lastAppLaunchAt
-        schedulerStateRecord.lastCheckInAt = result.lastCheckInAt
-        schedulerStateRecord.nextCheckInAt = result.nextCheckInAt
-
-        try? modelContext.save()
+        schedulerStateStore.apply(result, to: schedulerStateRecord)
+        try? schedulerStateStore.save(schedulerStateRecord)
         apply(snapshot: result.snapshot)
         refreshCheckInPromptState()
         launchState = .ready
@@ -304,12 +345,12 @@ final class TempoAppModel {
         accountableElapsedInterval = snapshot.accountableElapsedInterval
     }
 
-    static func formattedElapsedText(for elapsedDuration: TimeInterval) -> String {
+    nonisolated static func formattedElapsedText(for elapsedDuration: TimeInterval) -> String {
         let elapsedMinutes = max(Int(elapsedDuration / 60), 0)
         return "Elapsed \(elapsedMinutes) min"
     }
 
-    private static func supportingSubtitle(
+    nonisolated private static func supportingSubtitle(
         elapsedDuration: TimeInterval,
         isOverdue: Bool
     ) -> String {
@@ -347,6 +388,17 @@ enum ProjectDeletionError: LocalizedError {
         switch self {
         case let .hasTrackedTime(projectName):
             return "Tempo keeps local time entries attached to \(projectName), so it cannot be deleted yet."
+        }
+    }
+}
+
+enum ProjectValidationError: LocalizedError {
+    case emptyName
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyName:
+            return "Project names must contain at least one visible character."
         }
     }
 }

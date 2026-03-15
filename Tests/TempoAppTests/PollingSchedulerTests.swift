@@ -51,6 +51,28 @@ final class PollingSchedulerTests: XCTestCase {
         XCTAssertTrue(result.isPromptOverdue)
         XCTAssertEqual(result.accountableElapsedInterval, 35 * 60)
     }
+
+    func testCompleteCheckInSchedulesFromCompletionDate() {
+        let completionDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: completionDate))
+        let settings = AppSettingsRecord()
+        let state = SchedulerStateRecord(
+            lastCheckInAt: completionDate.addingTimeInterval(-45 * 60),
+            nextCheckInAt: completionDate.addingTimeInterval(-5 * 60),
+            lastAppLaunchAt: completionDate.addingTimeInterval(-10)
+        )
+
+        let result = scheduler.completeCheckIn(
+            state: state,
+            settings: settings,
+            completionDate: completionDate
+        )
+
+        XCTAssertEqual(result.lastCheckInAt, completionDate)
+        XCTAssertEqual(result.nextCheckInAt, completionDate.addingTimeInterval(25 * 60))
+        XCTAssertFalse(result.isPromptOverdue)
+        XCTAssertEqual(result.accountableElapsedInterval, 25 * 60)
+    }
 }
 
 private struct FixedSchedulerClock: SchedulerClock {

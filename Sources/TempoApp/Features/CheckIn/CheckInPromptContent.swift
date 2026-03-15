@@ -66,10 +66,18 @@ struct CheckInPromptContent: View {
     }
 
     private func selectProjectForPrompt(_ project: ProjectRecord) {
-        appModel?.dismissCheckInPrompt()
+        guard let appModel else {
+            return
+        }
+
+        try? appModel.selectProjectForPrompt(project)
     }
 
     private func createProjectFromPrompt() {
-        appModel?.dismissCheckInPrompt()
+        guard let appModel else {
+            return
+        }
+
+        try? appModel.createAndSelectProjectForPrompt(named: appModel.promptSearchText)
     }
 }

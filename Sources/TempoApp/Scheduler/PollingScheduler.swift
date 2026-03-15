@@ -72,6 +72,23 @@ final class PollingScheduler {
         )
     }
 
+    func completeCheckIn(
+        state: SchedulerStateRecord,
+        settings: AppSettingsRecord,
+        completionDate: Date
+    ) -> PollingSchedulerResult {
+        let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
+        let nextCheckInAt = completionDate.addingTimeInterval(pollingInterval)
+
+        return makeResult(
+            nextCheckInAt: nextCheckInAt,
+            isPromptOverdue: false,
+            accountableElapsedInterval: pollingInterval,
+            lastCheckInAt: completionDate,
+            lastAppLaunchAt: completionDate
+        )
+    }
+
     private func makeResult(
         nextCheckInAt: Date,
         isPromptOverdue: Bool,

@@ -17,4 +17,10 @@ final class SchedulerStateStore: SchedulerStore {
     func save(_ schedulerState: SchedulerStateRecord) throws {
         try modelContext.save()
     }
+
+    func apply(_ result: PollingSchedulerResult, to schedulerState: SchedulerStateRecord) {
+        schedulerState.lastCheckInAt = result.lastCheckInAt
+        schedulerState.nextCheckInAt = result.nextCheckInAt
+        schedulerState.lastAppLaunchAt = result.lastAppLaunchAt
+    }
 }
