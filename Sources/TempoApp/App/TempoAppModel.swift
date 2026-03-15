@@ -61,6 +61,10 @@ final class TempoAppModel {
     var nextCheckInAt: Date?
     var isPromptOverdue = false
     var accountableElapsedInterval: TimeInterval = 0
+    var isPromptDelayed = false
+    var delayedUntilAt: Date?
+    var isSilenced = false
+    var silenceEndsAt: Date?
     var checkInPromptState = CheckInPromptState.hidden
     var promptSearchText = ""
 
@@ -167,6 +171,74 @@ final class TempoAppModel {
         checkInPromptWindowController?.hide()
     }
 
+    var delayPresetMinutes: [Int] {
+        settings.delayPresetMinutes
+    }
+
+    var currentProjectContextLabel: String {
+        latestCompletedTimeEntry()?.project?.name ?? "No recent project"
+    }
+
+    var todaysTrackedDuration: TimeInterval {
+        let calendar = Calendar.current
+        let targetDay = calendar.startOfDay(for: clock.now)
+        let descriptor = FetchDescriptor<TimeEntryRecord>(sortBy: [SortDescriptor(\.endAt, order: .reverse)])
+        let entries = (try? modelContext.fetch(descriptor)) ?? []
+
+        return entries.reduce(into: 0) { total, entry in
+            guard calendar.startOfDay(for: entry.endAt) == targetDay else {
+                return
+            }
+
+            total += entry.endAt.timeIntervalSince(entry.startAt)
+        }
+    }
+
+    func menuBarPrimaryStatus(at date: Date) -> String {
+        if isSilenced, let silenceEndsAt {
+            return "Silenced until \(Self.formattedClockTime(silenceEndsAt))"
+        }
+
+        if isPromptDelayed, let delayedUntilAt {
+            return "Delayed until \(Self.formattedClockTime(delayedUntilAt))"
+        }
+
+        if isPromptOverdue {
+            return "Check-in overdue"
+        }
+
+        guard let nextCheckInAt else {
+            return "Not scheduled"
+        }
+
+        let remaining = max(nextCheckInAt.timeIntervalSince(date), 0)
+        return "Next check-in in \(Self.formattedCompactDuration(remaining))"
+    }
+
+    func menuBarSecondaryStatus(at date: Date) -> String {
+        if isSilenced, let silenceEndsAt {
+            return "Resumes at local midnight (\(Self.formattedClockTime(silenceEndsAt)))"
+        }
+
+        if isPromptDelayed, let delayedUntilAt {
+            let remaining = max(delayedUntilAt.timeIntervalSince(date), 0)
+            return "Prompt hidden for \(Self.formattedCompactDuration(remaining))"
+        }
+
+        if isPromptOverdue {
+            return Self.supportingSubtitle(
+                elapsedDuration: accountableElapsedInterval,
+                isOverdue: true
+            )
+        }
+
+        guard let nextCheckInAt else {
+            return "Open Tempo to reset scheduling."
+        }
+
+        return "Scheduled for \(Self.formattedClockTime(nextCheckInAt))"
+    }
+
     var recentPromptProjects: [ProjectRecord] {
         let projects = fetchProjects()
         let recentEndDates = recentPromptProjectEndDates()
@@ -250,6 +322,60 @@ final class TempoAppModel {
         try selectProjectForPrompt(project)
     }
 
+    func delayPrompt(byMinutes minutes: Int) throws {
+        let result = scheduler.delayCheckIn(
+            state: schedulerStateRecord,
+            settings: settings,
+            delayMinutes: minutes,
+            delayDate: clock.now
+        )
+        schedulerStateStore.apply(result, to: schedulerStateRecord)
+        try schedulerStateStore.save(schedulerStateRecord)
+
+        apply(snapshot: result.snapshot)
+        promptSearchText = ""
+        refreshCheckInPromptState()
+        dismissCheckInPrompt()
+    }
+
+    func silenceForRestOfDay() throws {
+        let result = scheduler.silenceUntilEndOfDay(
+            state: schedulerStateRecord,
+            settings: settings,
+            eventDate: clock.now
+        )
+        schedulerStateStore.apply(result, to: schedulerStateRecord)
+        try schedulerStateStore.save(schedulerStateRecord)
+
+        apply(snapshot: result.snapshot)
+        promptSearchText = ""
+        refreshCheckInPromptState()
+        dismissCheckInPrompt()
+    }
+
+    func endSilenceMode() throws {
+        let result = scheduler.endSilence(
+            state: schedulerStateRecord,
+            settings: settings,
+            eventDate: clock.now
+        )
+        schedulerStateStore.apply(result, to: schedulerStateRecord)
+        try schedulerStateStore.save(schedulerStateRecord)
+
+        apply(snapshot: result.snapshot)
+        refreshCheckInPromptState()
+    }
+
+    func checkInNow() {
+        let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
+        let promptReference = schedulerStateRecord.delayedFromPromptAt ?? schedulerStateRecord.nextCheckInAt ?? clock.now
+        let referenceStart = schedulerStateRecord.lastCheckInAt ?? promptReference.addingTimeInterval(-pollingInterval)
+        accountableElapsedInterval = max(clock.now.timeIntervalSince(referenceStart), pollingInterval)
+        isPromptOverdue = true
+        refreshCheckInPromptState()
+        presentCheckInPromptIfNeeded()
+    }
+
     func renameProject(_ project: ProjectRecord, to newName: String) throws {
         project.name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         try modelContext.save()
@@ -309,6 +435,11 @@ final class TempoAppModel {
         return latestEndDateByProjectID
     }
 
+    private func latestCompletedTimeEntry() -> TimeEntryRecord? {
+        let descriptor = FetchDescriptor<TimeEntryRecord>(sortBy: [SortDescriptor(\.endAt, order: .reverse)])
+        return try? modelContext.fetch(descriptor).first
+    }
+
     private func observeWorkspaceWake() {
         guard wakeObserver == nil else {
             return
@@ -343,11 +474,38 @@ final class TempoAppModel {
         nextCheckInAt = snapshot.nextCheckInAt
         isPromptOverdue = snapshot.isPromptOverdue
         accountableElapsedInterval = snapshot.accountableElapsedInterval
+        isPromptDelayed = snapshot.isPromptDelayed
+        delayedUntilAt = snapshot.delayedUntilAt
+        isSilenced = snapshot.isSilenced
+        silenceEndsAt = snapshot.silenceEndsAt
     }
 
     nonisolated static func formattedElapsedText(for elapsedDuration: TimeInterval) -> String {
         let elapsedMinutes = max(Int(elapsedDuration / 60), 0)
         return "Elapsed \(elapsedMinutes) min"
+    }
+
+    nonisolated static func formattedClockTime(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
+    nonisolated static func formattedCompactDuration(_ duration: TimeInterval) -> String {
+        let totalMinutes = max(Int(duration / 60), 0)
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+
+        if hours > 0 {
+            return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+        }
+
+        return "\(minutes)m"
+    }
+
+    nonisolated static func formattedTrackedDuration(_ duration: TimeInterval) -> String {
+        let totalMinutes = max(Int(duration / 60), 0)
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        return String(format: "%02d:%02d", hours, minutes)
     }
 
     nonisolated private static func supportingSubtitle(

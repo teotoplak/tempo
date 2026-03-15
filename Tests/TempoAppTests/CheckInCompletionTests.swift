@@ -55,6 +55,30 @@ final class CheckInCompletionTests: XCTestCase {
         XCTAssertEqual(entries[0].endAt, now)
     }
 
+    @MainActor
+    func testDelayPromptDoesNotCreateTimeEntry() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now)
+        )
+        let project = ProjectRecord(name: "Client Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        try appModel.modelContext.save()
+        appModel.accountableElapsedInterval = 25 * 60
+        appModel.promptSearchText = "client"
+        appModel.schedulerStateRecord.nextCheckInAt = now
+
+        try appModel.delayPrompt(byMinutes: 15)
+
+        let entries = try appModel.modelContext.fetch(FetchDescriptor<TimeEntryRecord>())
+        XCTAssertEqual(entries.count, 0)
+        XCTAssertEqual(appModel.promptSearchText, "")
+        XCTAssertEqual(appModel.schedulerStateRecord.nextCheckInAt, now.addingTimeInterval(15 * 60))
+        XCTAssertEqual(appModel.schedulerStateRecord.delayedUntilAt, now.addingTimeInterval(15 * 60))
+        XCTAssertFalse(appModel.checkInPromptState.isPresented)
+    }
+
     func testCompletionFlowRemainsSilent() throws {
         let rootURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

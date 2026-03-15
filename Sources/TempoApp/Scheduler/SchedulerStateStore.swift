@@ -22,5 +22,9 @@ final class SchedulerStateStore: SchedulerStore {
         schedulerState.lastCheckInAt = result.lastCheckInAt
         schedulerState.nextCheckInAt = result.nextCheckInAt
         schedulerState.lastAppLaunchAt = result.lastAppLaunchAt
+        schedulerState.delayedUntilAt = result.delayedUntilAt
+        schedulerState.delayedFromPromptAt = result.delayedFromPromptAt
+        schedulerState.silencedAt = result.silencedAt
+        schedulerState.silenceEndsAt = result.silenceEndsAt
     }
 }

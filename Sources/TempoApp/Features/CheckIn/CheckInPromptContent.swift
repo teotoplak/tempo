@@ -25,6 +25,28 @@ struct CheckInPromptContent: View {
             }
 
             VStack(alignment: .leading, spacing: 16) {
+                if let appModel {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Quick actions")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 10) {
+                            ForEach(appModel.delayPresetMinutes, id: \.self) { preset in
+                                Button("Delay \(preset) min") {
+                                    try? appModel.delayPrompt(byMinutes: preset)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+
+                            Button("Silence for today") {
+                                try? appModel.silenceForRestOfDay()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                }
+
                 TextField("Find or create a project", text: promptSearchText)
                     .textFieldStyle(.roundedBorder)
 
