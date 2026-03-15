@@ -397,7 +397,7 @@ final class PollingScheduler {
             lastAppLaunchAt: eventDate,
             idleBeganAt: state.idleBeganAt ?? pendingIdleStartedAt,
             idleDetectedAt: state.idleDetectedAt ?? pendingIdleStartedAt,
-            idleResolvedAt: nil,
+            idleResolvedAt: eventDate,
             pendingIdleStartedAt: pendingIdleStartedAt,
             pendingIdleEndedAt: pendingIdleEndedAt,
             pendingIdleReason: state.pendingIdleReason,

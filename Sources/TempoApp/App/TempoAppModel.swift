@@ -65,6 +65,11 @@ final class TempoAppModel {
     var delayedUntilAt: Date?
     var isSilenced = false
     var silenceEndsAt: Date?
+    var isIdlePending = false
+    var pendingIdleStartedAt: Date?
+    var pendingIdleEndedAt: Date?
+    var pendingIdleReason: String?
+    var pendingIdleDuration: TimeInterval = 0
     var checkInPromptState = CheckInPromptState.hidden
     var promptSearchText = ""
 
@@ -72,7 +77,7 @@ final class TempoAppModel {
     private let scheduler: PollingScheduler
     private let schedulerStateStore: SchedulerStateStore
     private var hasHandledInitialLaunch = false
-    private var wakeObserver: NSObjectProtocol?
+    private var workspaceObservers: [NSObjectProtocol] = []
     private var checkInPromptWindowController: CheckInPromptWindowController?
 
     init(
@@ -129,11 +134,30 @@ final class TempoAppModel {
     }
 
     func handleSceneActivation() {
-        handleSchedulerTransition(eventDate: clock.now)
+        let now = clock.now
+        detectInactivityIfNeeded(activityDate: currentUserActivityDate(referenceDate: now))
+
+        guard !isIdlePending else {
+            return
+        }
+
+        handleSchedulerTransition(eventDate: now)
     }
 
     func handleAppWake() {
-        handleSchedulerTransition(eventDate: clock.now)
+        if isIdlePending {
+            handleIdleReturn()
+            return
+        }
+
+        let now = clock.now
+        detectInactivityIfNeeded(activityDate: currentUserActivityDate(referenceDate: now))
+
+        guard !isIdlePending else {
+            return
+        }
+
+        handleSchedulerTransition(eventDate: now)
     }
 
     func quit() {
@@ -147,16 +171,20 @@ final class TempoAppModel {
     }
 
     func refreshCheckInPromptState() {
-        let shouldPresent = isPromptOverdue
+        let shouldPresent = isPromptOverdue || shouldPresentPendingIdlePrompt
+        let promptTitle = shouldPresentPendingIdlePrompt ? "Resolve idle time" : "What are you currently doing"
+        let supportingSubtitle = shouldPresentPendingIdlePrompt
+            ? Self.idleSupportingSubtitle(duration: pendingIdleDuration, reason: pendingIdleReasonLabel)
+            : Self.supportingSubtitle(
+                elapsedDuration: accountableElapsedInterval,
+                isOverdue: isPromptOverdue
+            )
         checkInPromptState = CheckInPromptState(
             isPresented: shouldPresent,
             elapsedDuration: accountableElapsedInterval,
             isOverdue: isPromptOverdue,
-            promptTitle: "What are you currently doing",
-            supportingSubtitle: Self.supportingSubtitle(
-                elapsedDuration: accountableElapsedInterval,
-                isOverdue: isPromptOverdue
-            )
+            promptTitle: promptTitle,
+            supportingSubtitle: supportingSubtitle
         )
         checkInPromptWindowController?.update(with: checkInPromptState)
     }
@@ -237,6 +265,10 @@ final class TempoAppModel {
         }
 
         return "Scheduled for \(Self.formattedClockTime(nextCheckInAt))"
+    }
+
+    var pendingIdleStatusText: String {
+        Self.idleSupportingSubtitle(duration: pendingIdleDuration, reason: pendingIdleReasonLabel)
     }
 
     var recentPromptProjects: [ProjectRecord] {
@@ -367,11 +399,81 @@ final class TempoAppModel {
     }
 
     func checkInNow() {
+        if isIdlePending {
+            schedulerStateRecord.idleResolvedAt = clock.now
+            refreshCheckInPromptState()
+            presentCheckInPromptIfNeeded()
+            return
+        }
+
         let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
         let promptReference = schedulerStateRecord.delayedFromPromptAt ?? schedulerStateRecord.nextCheckInAt ?? clock.now
         let referenceStart = schedulerStateRecord.lastCheckInAt ?? promptReference.addingTimeInterval(-pollingInterval)
         accountableElapsedInterval = max(clock.now.timeIntervalSince(referenceStart), pollingInterval)
         isPromptOverdue = true
+        refreshCheckInPromptState()
+        presentCheckInPromptIfNeeded()
+    }
+
+    func detectInactivityIfNeeded(activityDate: Date) {
+        guard !isIdlePending else {
+            return
+        }
+
+        let threshold = TimeInterval(settings.idleThresholdMinutes * 60)
+        let now = clock.now
+        guard now.timeIntervalSince(activityDate) >= threshold else {
+            return
+        }
+
+        let result = scheduler.beginIdleInterval(
+            state: schedulerStateRecord,
+            settings: settings,
+            eventDate: now,
+            reason: "inactivity"
+        )
+        var adjustedResult = result
+        adjustedResult.snapshot.accountableWorkEndAt = activityDate
+        adjustedResult.snapshot.pendingIdleStartedAt = activityDate
+        adjustedResult.accountableWorkEndAt = activityDate
+        adjustedResult.idleBeganAt = activityDate
+        adjustedResult.pendingIdleStartedAt = activityDate
+
+        schedulerStateStore.apply(adjustedResult, to: schedulerStateRecord)
+        try? schedulerStateStore.save(schedulerStateRecord)
+
+        apply(snapshot: adjustedResult.snapshot)
+        promptSearchText = ""
+        refreshCheckInPromptState()
+        dismissCheckInPrompt()
+    }
+
+    func handleScreenLock() {
+        let result = scheduler.beginIdleInterval(
+            state: schedulerStateRecord,
+            settings: settings,
+            eventDate: clock.now,
+            reason: "screen-locked"
+        )
+        schedulerStateStore.apply(result, to: schedulerStateRecord)
+        try? schedulerStateStore.save(schedulerStateRecord)
+
+        apply(snapshot: result.snapshot)
+        promptSearchText = ""
+        refreshCheckInPromptState()
+        dismissCheckInPrompt()
+    }
+
+    func handleIdleReturn() {
+        let result = scheduler.resolveReturnedIdleState(
+            state: schedulerStateRecord,
+            settings: settings,
+            eventDate: clock.now
+        )
+        schedulerStateStore.apply(result, to: schedulerStateRecord)
+        try? schedulerStateStore.save(schedulerStateRecord)
+
+        apply(snapshot: result.snapshot)
         refreshCheckInPromptState()
         presentCheckInPromptIfNeeded()
     }
@@ -441,11 +543,12 @@ final class TempoAppModel {
     }
 
     private func observeWorkspaceWake() {
-        guard wakeObserver == nil else {
+        guard workspaceObservers.isEmpty else {
             return
         }
 
-        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        let notificationCenter = NSWorkspace.shared.notificationCenter
+        workspaceObservers.append(notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
@@ -454,6 +557,34 @@ final class TempoAppModel {
                 self?.handleAppWake()
             }
         }
+        )
+        workspaceObservers.append(notificationCenter.addObserver(
+            forName: NSWorkspace.sessionDidResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleScreenLock()
+            }
+        })
+        workspaceObservers.append(notificationCenter.addObserver(
+            forName: NSWorkspace.screensDidSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleScreenLock()
+            }
+        })
+        workspaceObservers.append(notificationCenter.addObserver(
+            forName: NSWorkspace.sessionDidBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleIdleReturn()
+            }
+        })
     }
 
     private func handleSchedulerTransition(eventDate: Date) {
@@ -478,6 +609,33 @@ final class TempoAppModel {
         delayedUntilAt = snapshot.delayedUntilAt
         isSilenced = snapshot.isSilenced
         silenceEndsAt = snapshot.silenceEndsAt
+        isIdlePending = snapshot.isIdlePending
+        pendingIdleStartedAt = snapshot.pendingIdleStartedAt
+        pendingIdleEndedAt = snapshot.pendingIdleEndedAt
+        pendingIdleReason = snapshot.pendingIdleReason
+        pendingIdleDuration = max((snapshot.pendingIdleEndedAt ?? snapshot.pendingIdleStartedAt ?? clock.now).timeIntervalSince(snapshot.pendingIdleStartedAt ?? clock.now), 0)
+    }
+
+    private var shouldPresentPendingIdlePrompt: Bool {
+        isIdlePending && schedulerStateRecord.idleResolvedAt != nil
+    }
+
+    private var pendingIdleReasonLabel: String {
+        switch pendingIdleReason {
+        case "screen-locked":
+            return "Screen locked"
+        default:
+            return "Inactive"
+        }
+    }
+
+    private func currentUserActivityDate(referenceDate: Date) -> Date {
+        let idleSeconds = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .null)
+        guard idleSeconds.isFinite, idleSeconds >= 0 else {
+            return referenceDate
+        }
+
+        return referenceDate.addingTimeInterval(-idleSeconds)
     }
 
     nonisolated static func formattedElapsedText(for elapsedDuration: TimeInterval) -> String {
@@ -518,6 +676,13 @@ final class TempoAppModel {
         }
 
         return "\(elapsed) · overdue"
+    }
+
+    nonisolated private static func idleSupportingSubtitle(
+        duration: TimeInterval,
+        reason: String
+    ) -> String {
+        "\(reason) for \(formattedCompactDuration(duration))"
     }
 }
 

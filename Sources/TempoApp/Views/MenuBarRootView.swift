@@ -16,6 +16,13 @@ struct MenuBarRootView: View {
 
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 VStack(alignment: .leading, spacing: 10) {
+                    if appModel.isIdlePending {
+                        statusCard(
+                            title: "Idle pending",
+                            primary: "Resolve idle time",
+                            secondary: appModel.pendingIdleStatusText
+                        )
+                    }
                     statusCard(
                         title: appModel.isSilenced ? "Silence status" : "Next check-in",
                         primary: appModel.menuBarPrimaryStatus(at: context.date),
