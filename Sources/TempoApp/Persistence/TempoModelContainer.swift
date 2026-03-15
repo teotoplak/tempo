@@ -10,12 +10,13 @@ enum TempoModelContainer {
     }
 
     private static func makeContainer(isStoredInMemoryOnly: Bool) -> ModelContainer {
-        let schema = Schema([
+        let models: [any PersistentModel.Type] = [
             ProjectRecord.self,
             AppSettingsRecord.self,
             SchedulerStateRecord.self,
             TimeEntryRecord.self,
-        ])
+        ]
+        let schema = Schema(models)
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: isStoredInMemoryOnly

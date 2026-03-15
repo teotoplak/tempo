@@ -9,6 +9,11 @@ struct ProjectManagementView: View {
     @State private var deletionCandidate: ProjectRecord?
     @State private var errorMessage: String?
 
+    init(appModel: TempoAppModel) {
+        self.appModel = appModel
+        _projects = Query(sort: \ProjectRecord.sortOrder)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
