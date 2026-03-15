@@ -8,7 +8,7 @@ The roadmap starts by establishing a reliable native macOS foundation for local 
 
 - [x] **Phase 1: Foundation and Timing Engine** - Build the native menu bar shell, local data model, settings, and polling engine that define the product’s correctness baseline.
 - [x] **Phase 2: Check-In Logging Flow** - Deliver the full-screen prompt and project-based time attribution flow that turns polling into actual tracked entries. (completed 2026-03-15)
-- [ ] **Phase 3: Deferrals, Silence, and Menu Bar Control** - Add postponement, silence controls, and menu bar status/actions for daily usability.
+- [x] **Phase 3: Deferrals, Silence, and Menu Bar Control** - Add postponement, silence controls, and menu bar status/actions for daily usability. (completed 2026-03-16)
 - [ ] **Phase 4: Idle and Locked-Screen Reconciliation** - Prevent incorrect active tracking during inactivity and let the user resolve idle time explicitly.
 - [ ] **Phase 5: Analytics and CSV Export** - Provide reporting views and portable export so tracked data becomes useful for reflection.
 - [ ] **Phase 6: Launch and Correctness Hardening** - Finish launch-at-login support and tighten timing and workflow reliability across day boundaries.
@@ -55,13 +55,13 @@ Plans:
   1. User can delay a prompt and the app re-prompts automatically after the chosen duration.
   2. User can silence tracking for the rest of the day from the prompt or turn silence off from the menu bar.
   3. While silenced, app stops counting tracked work and automatically resumes normal behavior at midnight.
-  4. Menu bar UI shows next check-in countdown, current project context, today’s total, and quick actions.
-**Plans**: 3 plans
+  4. Menu bar UI shows next check-in countdown, current project context, today's total, and quick actions.
+**Plans**: 3/3 plans complete
 
 Plans:
-- [ ] 03-01: Implement delay actions and rescheduling behavior.
-- [ ] 03-02: Implement silence mode lifecycle, midnight reset, and manual unsilence.
-- [ ] 03-03: Build menu bar status, totals, and quick actions.
+- [x] 03-01: Implement delay actions and rescheduling behavior.
+- [x] 03-02: Implement silence mode lifecycle, midnight reset, and manual unsilence.
+- [x] 03-03: Build menu bar status, totals, and quick actions.
 
 ### Phase 4: Idle and Locked-Screen Reconciliation
 **Goal**: Detect inactivity and locked-screen periods, exclude them from active tracking, and let the user resolve that time intentionally.
@@ -116,7 +116,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Foundation and Timing Engine | 3/3 | Complete | 2026-03-15 |
 | 2. Check-In Logging Flow | 3/3 | Complete   | 2026-03-15 |
-| 3. Deferrals, Silence, and Menu Bar Control | 0/3 | Not started | - |
+| 3. Deferrals, Silence, and Menu Bar Control | 3/3 | Complete | 2026-03-16 |
 | 4. Idle and Locked-Screen Reconciliation | 0/2 | Not started | - |
 | 5. Analytics and CSV Export | 0/3 | Not started | - |
 | 6. Launch and Correctness Hardening | 0/2 | Not started | - |
