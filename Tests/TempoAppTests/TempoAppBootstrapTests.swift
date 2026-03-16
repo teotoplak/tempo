@@ -223,6 +223,23 @@ final class TempoAppBootstrapTests: XCTestCase {
         XCTAssertFalse(menuSource.contains("inlinePromptContent"))
     }
 
+    func testMenuBarIncludesDailySummaryContent() throws {
+        let rootURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let menuSource = try String(
+            contentsOf: rootURL.appendingPathComponent("Sources/TempoApp/Views/MenuBarRootView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(menuSource.contains("No tracked time today"))
+        XCTAssertTrue(menuSource.contains("Tracked"))
+        XCTAssertTrue(menuSource.contains("Started"))
+        XCTAssertTrue(menuSource.contains("Finished"))
+        XCTAssertTrue(menuSource.contains("summaryDateTitle"))
+    }
+
     @MainActor
     func testAnalyticsWindowSectionStillExists() {
         XCTAssertTrue(TempoAppModel.WindowSection.allCases.contains(.analytics))

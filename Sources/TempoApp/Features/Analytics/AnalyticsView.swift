@@ -132,8 +132,6 @@ struct AnalyticsView: View {
                     description: Text("Change the selected range or log time to populate the report.")
                 )
             } else {
-                AnalyticsChartSection(summaries: appModel.analyticsProjectSummaries)
-
                 VStack(spacing: 12) {
                     ForEach(appModel.analyticsProjectSummaries, id: \.id) { summary in
                         HStack(alignment: .firstTextBaseline, spacing: 12) {

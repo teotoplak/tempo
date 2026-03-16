@@ -4,10 +4,16 @@ struct MenuBarRootView: View {
     @Bindable var appModel: TempoAppModel
     @Environment(\.openWindow) private var openWindow
     @State private var isShowingSettings = false
+    @Environment(\.calendar) private var calendar
 
     private let actionColumns = [
         GridItem(.flexible(), spacing: 10),
         GridItem(.flexible(), spacing: 10),
+    ]
+    private let timelineStatColumns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
     ]
 
     var body: some View {
@@ -56,19 +62,7 @@ struct MenuBarRootView: View {
                     }
                 }
 
-                HStack(spacing: 10) {
-                    metricCard(
-                        title: "Current project",
-                        value: appModel.currentProjectContextLabel,
-                        detail: appModel.isPromptOverdue ? "Prompt waiting" : "Latest check-in"
-                    )
-
-                    metricCard(
-                        title: "Today's total",
-                        value: TempoAppModel.formattedTrackedDuration(appModel.todaysTrackedDuration),
-                        detail: "Tracked locally"
-                    )
-                }
+                dailySummarySection
 
                 primaryActionButton
 
@@ -112,8 +106,8 @@ struct MenuBarRootView: View {
             .padding(14)
         }
         .scrollIndicators(.never)
-        .frame(width: 300)
-        .frame(idealHeight: 420, maxHeight: 460)
+        .frame(width: 320)
+        .frame(idealHeight: 520, maxHeight: 620)
     }
 
     private var header: some View {
@@ -242,24 +236,135 @@ struct MenuBarRootView: View {
         }
     }
 
-    private func metricCard(title: String, value: String, detail: String) -> some View {
+    private var dailySummarySection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
 
-            Text(value)
-                .font(.system(size: 15, weight: .semibold))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(summaryDateTitle)
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(maxWidth: .infinity)
 
-            Text(detail)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.bottom, 2)
+
+            if appModel.analyticsProjectSummaries.isEmpty {
+                ContentUnavailableView {
+                    Label("No tracked time today", systemImage: "clock.badge.questionmark")
+                } description: {
+                    Text("Today’s breakdown, total, and work hours will appear here once you log time.")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(appModel.analyticsProjectSummaries, id: \.id) { summary in
+                        projectSummaryRow(summary)
+                    }
+                }
+                .padding(.top, 4)
+
+                Divider()
+                    .padding(.vertical, 2)
+
+                LazyVGrid(columns: timelineStatColumns, alignment: .leading, spacing: 10) {
+                    timelineStat(
+                        icon: "clock",
+                        value: TempoAppModel.formattedTrackedDuration(appModel.analyticsTotalDuration),
+                        label: "Tracked"
+                    )
+
+                    timelineStat(
+                        icon: "play.circle",
+                        value: appModel.analyticsFirstEntryStartText,
+                        label: "Started"
+                    )
+
+                    timelineStat(
+                        icon: "stop.circle",
+                        value: lastTrackedTimeText,
+                        label: "Finished"
+                    )
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(cardBackground)
+    }
+
+    private func projectSummaryRow(_ summary: AnalyticsProjectSummary) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(summary.projectName)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                Text(TempoAppModel.formattedTrackedDuration(summary.totalDuration))
+                    .font(.system(size: 13, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+            }
+
+            GeometryReader { geometry in
+                let progress = min(max(summary.percentageOfTotal, 0), 1)
+
+                ZStack(alignment: .leading) {
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor.opacity(0.14))
+
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor)
+                        .frame(width: max(geometry.size.width * progress, progress > 0 ? 8 : 0))
+                }
+            }
+            .frame(height: 3)
+        }
+    }
+
+    private func timelineStat(icon: String, value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label {
+                Text(value)
+                    .font(.system(size: 12, weight: .semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            } icon: {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .labelStyle(.titleAndIcon)
+
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var summaryDateTitle: String {
+        let summaryDate = appModel.analyticsPeriod.startDate
+        if calendar.isDateInToday(summaryDate) {
+            return "Today \(summaryDate.formatted(.dateTime.month(.wide).day().year()))"
+        }
+
+        return summaryDate.formatted(.dateTime.month(.wide).day().year())
+    }
+
+    private var lastTrackedTimeText: String {
+        guard let lastInterval = appModel.analyticsTimelineIntervals.max(by: { $0.endDate < $1.endDate }) else {
+            return "No output"
+        }
+
+        return TempoAppModel.formattedClockTime(lastInterval.endDate)
     }
 
     private var cardBackground: some ShapeStyle {
