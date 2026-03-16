@@ -1,0 +1,11 @@
+.DS_Store
+
+# Swift Package Manager build artifacts
+.build/
+
+# Xcode/SwiftPM user-specific state
+.swiftpm/xcode/xcuserdata/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
+
+# Common local Xcode output
+DerivedData/

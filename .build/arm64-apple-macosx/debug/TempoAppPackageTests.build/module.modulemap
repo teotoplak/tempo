@@ -1,4 +1,0 @@
-module TempoAppPackageTests {
-    header "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppPackageTests.build/TempoAppPackageTests-Swift.h"
-    requires objc
-}
