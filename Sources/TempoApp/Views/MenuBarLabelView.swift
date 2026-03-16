@@ -20,5 +20,11 @@ struct MenuBarLabelView: View {
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { currentDate in
             now = currentDate
         }
+        .onChange(of: appModel.nextCheckInAt) { _, _ in
+            now = Date()
+        }
+        .onChange(of: appModel.isSilenced) { _, _ in
+            now = Date()
+        }
     }
 }
