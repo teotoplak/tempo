@@ -10,6 +10,7 @@ final class CheckInPromptWindowController {
     private(set) var promptWindow: NSWindow?
     private weak var appModel: TempoAppModel?
     private var priorActivationPolicy: NSApplication.ActivationPolicy?
+    private var activationObserver: NSObjectProtocol?
 
     func bind(appModel: TempoAppModel) {
         self.appModel = appModel
@@ -26,6 +27,7 @@ final class CheckInPromptWindowController {
     func hide() {
         promptWindow?.orderOut(nil)
         backdropWindow?.orderOut(nil)
+        removeActivationObserver()
 
         if let priorActivationPolicy {
             NSApplication.shared.setActivationPolicy(priorActivationPolicy)
@@ -42,18 +44,24 @@ final class CheckInPromptWindowController {
             promptWindow = Self.makePromptWindow(screenFrame: visibleFrame, state: state)
         }
 
-        backdropWindow?.orderOut(nil)
+        if Self.wantsBackdrop(for: state) {
+            if backdropWindow == nil {
+                backdropWindow = Self.makeBackdropWindow(screenFrame: screenFrame)
+            }
+
+            backdropWindow?.setFrame(screenFrame, display: false)
+            backdropWindow?.orderFrontRegardless()
+        } else {
+            backdropWindow?.orderOut(nil)
+        }
 
         promptWindow?.setFrame(Self.promptFrame(in: visibleFrame, state: state, anchorRect: anchorRect), display: false)
         promptWindow?.contentViewController = NSHostingController(
             rootView: CheckInPromptView(appModel: appModel, state: state)
         )
 
-        promoteAppForPromptInteraction()
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        promptWindow?.orderFrontRegardless()
-        promptWindow?.makeMain()
-        promptWindow?.makeKeyAndOrderFront(nil)
+        installActivationObserverIfNeeded()
+        bringPromptToFront()
     }
 
     private func promoteAppForPromptInteraction() {
@@ -65,6 +73,48 @@ final class CheckInPromptWindowController {
         if app.activationPolicy() != .regular {
             app.setActivationPolicy(.regular)
         }
+    }
+
+    private func installActivationObserverIfNeeded() {
+        guard activationObserver == nil else {
+            return
+        }
+
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: NSApplication.shared,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.reassertPromptFocusIfNeeded()
+            }
+        }
+    }
+
+    private func removeActivationObserver() {
+        guard let activationObserver else {
+            return
+        }
+
+        NotificationCenter.default.removeObserver(activationObserver)
+        self.activationObserver = nil
+    }
+
+    private func reassertPromptFocusIfNeeded() {
+        guard promptWindow?.isVisible == true else {
+            return
+        }
+
+        bringPromptToFront()
+    }
+
+    private func bringPromptToFront() {
+        promoteAppForPromptInteraction()
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        backdropWindow?.orderFrontRegardless()
+        promptWindow?.orderFrontRegardless()
+        promptWindow?.makeMain()
+        promptWindow?.makeKeyAndOrderFront(nil)
     }
 
     private func currentMenuBarAnchorRect(in visibleFrame: CGRect) -> CGRect? {
@@ -105,11 +155,11 @@ final class CheckInPromptWindowController {
             defer: false
         )
         window.isOpaque = false
-        window.backgroundColor = NSColor.black.withAlphaComponent(0.35)
+        window.backgroundColor = NSColor.black.withAlphaComponent(0.5)
         window.hasShadow = false
-        window.ignoresMouseEvents = true
-        window.level = .statusBar
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.ignoresMouseEvents = false
+        window.level = .screenSaver
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         return window
     }
 
@@ -121,13 +171,14 @@ final class CheckInPromptWindowController {
             backing: .buffered,
             defer: false
         )
-        panel.level = .statusBar
+        panel.level = .screenSaver
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
         panel.animationBehavior = .utilityWindow
+        panel.isMovable = false
         return panel
     }
 
@@ -146,11 +197,13 @@ final class CheckInPromptWindowController {
     }
 
     static func wantsBackdrop(for state: CheckInPromptState) -> Bool {
-        false
+        state.isPresented
     }
 }
 
 private final class CheckInPromptWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override func cancelOperation(_ sender: Any?) {}
 }

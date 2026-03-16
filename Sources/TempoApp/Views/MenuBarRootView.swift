@@ -2,7 +2,6 @@ import SwiftUI
 
 struct MenuBarRootView: View {
     @Bindable var appModel: TempoAppModel
-    @Environment(\.openWindow) private var openWindow
     @State private var isShowingSettings = false
     @State private var isShowingTroubleshootingCheckIns = false
     @Environment(\.calendar) private var calendar
@@ -62,17 +61,11 @@ struct MenuBarRootView: View {
 
                 primaryActionButton
 
+                if !appModel.isSilenced {
+                    doneForDayActionButton
+                }
+
                 LazyVGrid(columns: actionColumns, spacing: 10) {
-                    secondaryActionButton(title: "Analytics", icon: "waveform.path.ecg") {
-                        appModel.selectedWindow = .analytics
-                        openWindow(id: AppSceneID.mainWindow.rawValue)
-                    }
-
-                    secondaryActionButton(title: "Projects", icon: "folder.badge.gearshape") {
-                        appModel.selectedWindow = .projects
-                        openWindow(id: AppSceneID.mainWindow.rawValue)
-                    }
-
                     secondaryActionButton(title: "Settings", icon: "slider.horizontal.3") {
                         isShowingSettings = true
                     }
@@ -165,6 +158,30 @@ struct MenuBarRootView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
             .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var doneForDayActionButton: some View {
+        Button {
+            try? appModel.silenceForRestOfDay()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "moon.stars.fill")
+                    .font(.system(size: 12, weight: .semibold))
+
+                Text("Done for day")
+                    .font(.system(size: 13, weight: .semibold))
+
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
         }
         .buttonStyle(.plain)
     }
@@ -283,7 +300,7 @@ struct MenuBarRootView: View {
                 }
                 .padding(.top, 8)
             } label: {
-                Text("Troubleshooting check-ins (\(appModel.menuBarDayCheckIns.count))")
+                Text("Check-ins (\(appModel.menuBarDayCheckIns.count))")
                     .font(.system(size: 12, weight: .semibold))
             }
         }

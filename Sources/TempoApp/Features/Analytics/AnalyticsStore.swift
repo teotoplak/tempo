@@ -90,7 +90,7 @@ final class AnalyticsStore {
                 source: record.source
             )
         case "idle":
-            guard let idleKindRawValue = record.idleKind, let idleKind = TimeAllocationIdleKind(rawValue: idleKindRawValue) else {
+            guard let idleKindRawValue = record.idleKind, let idleKind = TimeAllocationIdleKind(persistedValue: idleKindRawValue) else {
                 return nil
             }
 

@@ -5,13 +5,14 @@ import XCTest
 
 final class CheckInPromptPresentationTests: XCTestCase {
     @MainActor
-    func testBackdropIgnoresMouseEvents() {
+    func testBackdropBlocksMouseEventsAndStaysAboveApps() {
         let screenFrame = CGRect(x: 0, y: 0, width: 1440, height: 900)
 
         let window = CheckInPromptWindowController.makeBackdropWindow(screenFrame: screenFrame)
 
         XCTAssertEqual(window.frame, screenFrame)
-        XCTAssertTrue(window.ignoresMouseEvents)
+        XCTAssertFalse(window.ignoresMouseEvents)
+        XCTAssertEqual(window.level, .screenSaver)
     }
 
     @MainActor
@@ -20,9 +21,10 @@ final class CheckInPromptPresentationTests: XCTestCase {
 
         let panel = CheckInPromptWindowController.makePromptWindow(screenFrame: screenFrame)
 
-        XCTAssertEqual(panel.level, .statusBar)
+        XCTAssertEqual(panel.level, .screenSaver)
         XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary))
         XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces))
+        XCTAssertTrue(panel.collectionBehavior.contains(.stationary))
         XCTAssertTrue(panel.canBecomeKey)
     }
 
@@ -31,6 +33,21 @@ final class CheckInPromptPresentationTests: XCTestCase {
             TempoAppModel.formattedElapsedText(for: 25 * 60),
             "Elapsed 25 min"
         )
+    }
+
+    func testPromptFooterShowsDedicatedDoneForDayButton() throws {
+        let rootURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let promptSource = try String(
+            contentsOf: rootURL.appendingPathComponent("Sources/TempoApp/Features/CheckIn/CheckInPromptContent.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(promptSource.contains("Done for day"))
+        XCTAssertFalse(promptSource.contains("Image(systemName: \"ellipsis\")"))
+        XCTAssertFalse(promptSource.contains("Menu {"))
     }
 
     @MainActor
@@ -96,6 +113,25 @@ final class CheckInPromptPresentationTests: XCTestCase {
         appModel.presentCheckInPromptIfNeeded()
 
         XCTAssertEqual(appModel.nextRuntimeUpdateAt(referenceDate: now), now.addingTimeInterval(10 * 60))
+    }
+
+    @MainActor
+    func testRecoverSchedulerStateMarksPersistedDeadlineOverdueWithoutSavedCheckIns() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let overdueDeadline = now.addingTimeInterval(-60)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedPresentationClock(now: now),
+            calendar: fixedPresentationCalendar(),
+            launchAtLoginController: FixedPresentationLaunchAtLoginController(isEnabled: false)
+        )
+
+        appModel.schedulerStateRecord.nextCheckInAt = overdueDeadline
+        appModel.recoverSchedulerState(eventDate: now)
+
+        XCTAssertTrue(appModel.isPromptOverdue)
+        XCTAssertEqual(appModel.nextCheckInAt, overdueDeadline)
+        XCTAssertEqual(appModel.accountableElapsedInterval, (26 * 60))
     }
 
     @MainActor

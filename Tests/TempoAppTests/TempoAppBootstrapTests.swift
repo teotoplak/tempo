@@ -242,7 +242,7 @@ final class TempoAppBootstrapTests: XCTestCase {
         XCTAssertFalse(manifest.contains(".package(url:"))
     }
 
-    func testMenuBarQuickActionsRemainAvailable() throws {
+    func testMenuBarQuickActionsMatchCurrentModal() throws {
         let rootURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -253,10 +253,11 @@ final class TempoAppBootstrapTests: XCTestCase {
         )
 
         XCTAssertTrue(menuSource.contains("Check In Now"))
-        XCTAssertTrue(menuSource.contains("Analytics"))
-        XCTAssertTrue(menuSource.contains("Projects"))
+        XCTAssertTrue(menuSource.contains("Done for day"))
         XCTAssertTrue(menuSource.contains("Settings"))
         XCTAssertTrue(menuSource.contains("Quit Tempo"))
+        XCTAssertFalse(menuSource.contains("secondaryActionButton(title: \"Analytics\""))
+        XCTAssertFalse(menuSource.contains("secondaryActionButton(title: \"Projects\""))
         XCTAssertTrue(menuSource.contains("appModel.setMenuBarWindowVisible(true)"))
         XCTAssertFalse(menuSource.contains("inlinePromptContent"))
     }
@@ -273,7 +274,7 @@ final class TempoAppBootstrapTests: XCTestCase {
 
         XCTAssertTrue(menuSource.contains("No tracked time today"))
         XCTAssertTrue(menuSource.contains("summaryDateTitle"))
-        XCTAssertTrue(menuSource.contains("Troubleshooting check-ins"))
+        XCTAssertTrue(menuSource.contains("Check-ins"))
         XCTAssertFalse(menuSource.contains("label: \"Tracked\""))
         XCTAssertFalse(menuSource.contains("label: \"Started\""))
         XCTAssertFalse(menuSource.contains("label: \"Finished\""))

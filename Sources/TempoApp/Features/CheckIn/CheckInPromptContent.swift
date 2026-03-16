@@ -114,18 +114,22 @@ struct CheckInPromptContent: View {
 
             Spacer(minLength: 0)
 
-            Menu {
-                Button("Done for day") {
-                    try? appModel.silenceForRestOfDay()
-                }
+            Button {
+                try? appModel.silenceForRestOfDay()
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 28, height: 28)
-                    .background(controlBackground, in: Circle())
+                HStack(spacing: 6) {
+                    Image(systemName: "moon.stars.fill")
+                        .font(.system(size: 11, weight: .semibold))
+
+                    Text("Done for day")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(controlBackground, in: Capsule())
             }
-            .menuStyle(.borderlessButton)
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 4)
     }

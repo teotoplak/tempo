@@ -3,7 +3,16 @@ import Foundation
 enum TimeAllocationIdleKind: String, CaseIterable, Codable {
     case automaticThreshold = "automatic-threshold"
     case doneForDay = "done-for-day"
-    case snoozed = "snoozed"
+    case unansweredPrompt = "unanswered-prompt"
+
+    init?(persistedValue: String) {
+        if persistedValue == "snoozed" {
+            self = .unansweredPrompt
+            return
+        }
+
+        self.init(rawValue: persistedValue)
+    }
 }
 
 enum TimeAllocationBucket: Hashable, Equatable, Identifiable {

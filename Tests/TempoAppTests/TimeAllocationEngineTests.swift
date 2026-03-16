@@ -172,8 +172,8 @@ final class TimeAllocationEngineTests: XCTestCase {
         XCTAssertEqual(summary.allocatedIntervals[0].bucket, .project(id: projectID(1), name: "Project A"))
     }
 
-    func testSnoozedIdleIsReturnedInTroubleshootingOutput() {
-        let leading = idleCheckIn(.snoozed, at: date(2026, 3, 16, 10, 0, 0))
+    func testUnansweredPromptIdleIsReturnedInTroubleshootingOutput() {
+        let leading = idleCheckIn(.unansweredPrompt, at: date(2026, 3, 16, 10, 0, 0))
         let trailing = projectCheckIn("Project A", id: projectID(1), at: date(2026, 3, 16, 10, 20, 0))
         let summary = engine.summary(
             checkIns: [leading, trailing],

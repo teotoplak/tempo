@@ -595,7 +595,12 @@ final class TempoAppModel {
             return
         }
 
-        recoverSchedulerState(eventDate: clock.now)
+        if isSilenced || isIdlePending {
+            recoverSchedulerState(eventDate: clock.now)
+        } else {
+            rescheduleNextCheckInFromSettingsChange(at: clock.now)
+        }
+
         refreshCheckInPromptState()
     }
 
@@ -849,6 +854,26 @@ final class TempoAppModel {
         let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
 
         guard let latestCheckIn = latestCheckInRecord() else {
+            if let scheduledCheckInAt = schedulerStateRecord.nextCheckInAt ?? nextCheckInAt {
+                let isPromptOverdue = eventDate >= scheduledCheckInAt
+                let referenceStart = scheduledCheckInAt.addingTimeInterval(-pollingInterval)
+                let accountableElapsedInterval = isPromptOverdue
+                    ? max(eventDate.timeIntervalSince(referenceStart), pollingInterval)
+                    : pollingInterval
+
+                return DerivedRuntimeState(
+                    nextCheckInAt: scheduledCheckInAt,
+                    isPromptOverdue: isPromptOverdue,
+                    accountableElapsedInterval: accountableElapsedInterval,
+                    isSilenced: false,
+                    silenceEndsAt: nil,
+                    isIdlePending: false,
+                    pendingIdleStartedAt: nil,
+                    pendingIdleEndedAt: nil,
+                    pendingIdleReason: nil
+                )
+            }
+
             return DerivedRuntimeState(
                 nextCheckInAt: eventDate.addingTimeInterval(pollingInterval),
                 isPromptOverdue: false,
@@ -885,7 +910,7 @@ final class TempoAppModel {
         guard
             latestCheckIn.kind == "idle",
             let idleKindRawValue = latestCheckIn.idleKind,
-            let idleKind = TimeAllocationIdleKind(rawValue: idleKindRawValue)
+            let idleKind = TimeAllocationIdleKind(persistedValue: idleKindRawValue)
         else {
             return DerivedRuntimeState(
                 nextCheckInAt: eventDate.addingTimeInterval(pollingInterval),
@@ -954,7 +979,32 @@ final class TempoAppModel {
             selectedPromptProjectID = nil
         }
 
+        schedulerStateRecord.nextCheckInAt = runtimeState.nextCheckInAt
+        schedulerStateRecord.pendingIdleStartedAt = runtimeState.pendingIdleStartedAt
+        schedulerStateRecord.pendingIdleEndedAt = runtimeState.pendingIdleEndedAt
+        schedulerStateRecord.pendingIdleReason = runtimeState.pendingIdleReason
+        schedulerStateRecord.silenceEndsAt = runtimeState.silenceEndsAt
+
+        if modelContext.hasChanges {
+            try? modelContext.save()
+        }
+
         schedulePromptTimerIfNeeded()
+    }
+
+    private func rescheduleNextCheckInFromSettingsChange(at referenceDate: Date) {
+        let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
+        apply(runtimeState: DerivedRuntimeState(
+            nextCheckInAt: referenceDate.addingTimeInterval(pollingInterval),
+            isPromptOverdue: false,
+            accountableElapsedInterval: pollingInterval,
+            isSilenced: false,
+            silenceEndsAt: nil,
+            isIdlePending: false,
+            pendingIdleStartedAt: nil,
+            pendingIdleEndedAt: nil,
+            pendingIdleReason: nil
+        ))
     }
 
     private func latestSchedulingAnchorDate() -> Date? {
@@ -1018,8 +1068,8 @@ final class TempoAppModel {
 
     private var pendingIdleReasonLabel: String {
         switch pendingIdleReason {
-        case "snoozed":
-            return "Snoozed"
+        case "unanswered-prompt":
+            return "Unanswered prompt"
         case "screen-locked":
             return "Screen locked"
         default:
@@ -1078,8 +1128,8 @@ final class TempoAppModel {
 
         persistIdleCheckIn(
             at: promptIdleMarkAt,
-            idleKind: .snoozed,
-            source: "snoozed"
+            idleKind: .unansweredPrompt,
+            source: "unanswered-prompt"
         )
         try? modelContext.save()
 
