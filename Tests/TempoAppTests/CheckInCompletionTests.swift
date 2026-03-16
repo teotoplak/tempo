@@ -24,8 +24,8 @@ final class CheckInCompletionTests: XCTestCase {
         XCTAssertEqual(checkIns[0].timestamp, now)
         XCTAssertEqual(checkIns[0].kind, "project")
         XCTAssertEqual(checkIns[0].source, "check-in")
-        XCTAssertEqual(appModel.schedulerStateRecord.lastCheckInAt, now)
-        XCTAssertEqual(appModel.schedulerStateRecord.nextCheckInAt, now.addingTimeInterval(25 * 60))
+        XCTAssertEqual(appModel.nextCheckInAt, now.addingTimeInterval(25 * 60))
+        XCTAssertFalse(appModel.isIdlePending)
     }
 
     @MainActor
@@ -83,6 +83,7 @@ final class CheckInCompletionTests: XCTestCase {
         XCTAssertEqual(checkIns[1].timestamp, now)
         XCTAssertEqual(checkIns[1].source, "idle-return")
         XCTAssertFalse(appModel.isIdlePending)
+        XCTAssertEqual(appModel.nextCheckInAt, now.addingTimeInterval(25 * 60))
     }
 
     @MainActor

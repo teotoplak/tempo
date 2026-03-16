@@ -24,6 +24,18 @@ struct CheckInPromptState: Equatable {
     )
 }
 
+struct DerivedRuntimeState: Equatable {
+    var nextCheckInAt: Date?
+    var isPromptOverdue: Bool
+    var accountableElapsedInterval: TimeInterval
+    var isSilenced: Bool
+    var silenceEndsAt: Date?
+    var isIdlePending: Bool
+    var pendingIdleStartedAt: Date?
+    var pendingIdleEndedAt: Date?
+    var pendingIdleReason: String?
+}
+
 enum IdleResolutionError: LocalizedError {
     case noPendingIdle
     case invalidSplitDuration
@@ -178,7 +190,7 @@ final class TempoAppModel {
         self.launchAtLoginEnabled = launchAtLoginController.isEnabled
         self.lastSavedPollingIntervalMinutes = self.settings.pollingIntervalMinutes
 
-        apply(snapshot: scheduler.snapshot(for: self.schedulerStateRecord, settings: self.settings, eventDate: clock.now))
+        refreshRuntimeState(eventDate: clock.now)
         refreshAnalytics(referenceDate: clock.now)
         refreshCheckInPromptState()
     }
@@ -224,21 +236,11 @@ final class TempoAppModel {
     func handleSceneActivation(activityDate: Date? = nil) {
         let now = clock.now
         let resolvedActivityDate = activityDate ?? currentUserActivityDate(referenceDate: now)
-
-        if resolvePendingIdleIfActivityResumed(activityDate: resolvedActivityDate, referenceDate: now) {
-            return
-        }
-
-        recoverSchedulerState(eventDate: now)
+        recoverSchedulerState(eventDate: now, activityDate: resolvedActivityDate)
     }
 
     func handleAppWake() {
-        if isIdlePending {
-            handleIdleReturn()
-            return
-        }
-
-        recoverSchedulerState(eventDate: clock.now)
+        recoverSchedulerState(eventDate: clock.now, activityDate: clock.now)
     }
 
     func quit() {
@@ -261,9 +263,7 @@ final class TempoAppModel {
         if isVisible {
             let now = clock.now
             let activityDate = currentUserActivityDate(referenceDate: now)
-            if resolvePendingIdleIfActivityResumed(activityDate: activityDate, referenceDate: now) {
-                return
-            }
+            recoverSchedulerState(eventDate: now, activityDate: activityDate)
         }
 
         checkInPromptWindowController?.update(with: detachedCheckInPromptState)
@@ -498,17 +498,10 @@ final class TempoAppModel {
         }
 
         let completionDate = clock.now
-        try persistProjectCheckIn(project, at: completionDate, source: "check-in")
+        persistProjectCheckIn(project, at: completionDate, source: "check-in")
+        try modelContext.save()
 
-        let completionResult = scheduler.completeCheckIn(
-            state: schedulerStateRecord,
-            settings: settings,
-            completionDate: completionDate
-        )
-        schedulerStateStore.apply(completionResult, to: schedulerStateRecord)
-        try schedulerStateStore.save(schedulerStateRecord)
-
-        apply(snapshot: completionResult.snapshot)
+        refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
         refreshAnalytics(referenceDate: completionDate)
         promptSearchText = ""
         refreshCheckInPromptState()
@@ -529,35 +522,24 @@ final class TempoAppModel {
     }
 
     func silenceForRestOfDay() throws {
-        try persistIdleCheckIn(
+        persistIdleCheckIn(
             at: clock.now,
             idleKind: .doneForDay,
             source: "done-for-day"
         )
-        let result = scheduler.silenceUntilEndOfDay(
-            state: schedulerStateRecord,
-            settings: settings,
-            eventDate: clock.now
-        )
-        schedulerStateStore.apply(result, to: schedulerStateRecord)
-        try schedulerStateStore.save(schedulerStateRecord)
+        try modelContext.save()
 
-        apply(snapshot: result.snapshot)
+        refreshRuntimeState(eventDate: clock.now)
         promptSearchText = ""
         refreshCheckInPromptState()
         dismissCheckInPrompt()
     }
 
     func endSilenceMode() throws {
-        let result = scheduler.endSilence(
-            state: schedulerStateRecord,
-            settings: settings,
-            eventDate: clock.now
-        )
-        schedulerStateStore.apply(result, to: schedulerStateRecord)
-        try schedulerStateStore.save(schedulerStateRecord)
+        persistResumeCheckIn(at: clock.now, source: "unsilence")
+        try modelContext.save()
 
-        apply(snapshot: result.snapshot)
+        refreshRuntimeState(eventDate: clock.now, activityDate: clock.now)
         refreshCheckInPromptState()
     }
 
@@ -568,8 +550,8 @@ final class TempoAppModel {
         }
 
         let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
-        let promptReference = schedulerStateRecord.nextCheckInAt ?? clock.now
-        let referenceStart = schedulerStateRecord.lastCheckInAt ?? promptReference.addingTimeInterval(-pollingInterval)
+        let promptReference = nextCheckInAt ?? clock.now
+        let referenceStart = latestSchedulingAnchorDate() ?? promptReference.addingTimeInterval(-pollingInterval)
         accountableElapsedInterval = max(clock.now.timeIntervalSince(referenceStart), pollingInterval)
         isPromptOverdue = true
         promptPresentedAt = nil
@@ -583,8 +565,9 @@ final class TempoAppModel {
         }
 
         let completionDate = max(clock.now, pendingIdleEndedAt)
-        try persistProjectCheckIn(project, at: completionDate, source: "idle-return")
-        try completePendingIdleResolution()
+        persistProjectCheckIn(project, at: completionDate, source: "idle-return")
+        try modelContext.save()
+        refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
         refreshAnalytics(referenceDate: clock.now)
     }
 
@@ -593,7 +576,9 @@ final class TempoAppModel {
             throw IdleResolutionError.noPendingIdle
         }
 
-        try completePendingIdleResolution()
+        persistResumeCheckIn(at: clock.now, source: "idle-discarded")
+        try modelContext.save()
+        refreshRuntimeState(eventDate: clock.now, activityDate: clock.now)
         refreshAnalytics(referenceDate: clock.now)
     }
 
@@ -612,73 +597,44 @@ final class TempoAppModel {
             throw IdleResolutionError.invalidSplitDuration
         }
 
-        try persistProjectCheckIn(secondProject, at: clock.now, source: "idle-return")
-
-        try completePendingIdleResolution()
+        persistProjectCheckIn(secondProject, at: clock.now, source: "idle-return")
+        try modelContext.save()
+        refreshRuntimeState(eventDate: clock.now, activityDate: clock.now)
         refreshAnalytics(referenceDate: clock.now)
     }
 
     func handleScreenLock() {
-        try? persistIdleCheckIn(
+        guard latestCheckInRecord()?.kind != "idle" else {
+            refreshRuntimeState(eventDate: clock.now)
+            return
+        }
+
+        persistIdleCheckIn(
             at: clock.now,
             idleKind: .automaticThreshold,
             source: "screen-locked"
         )
-        let result = scheduler.beginIdleInterval(
-            state: schedulerStateRecord,
-            settings: settings,
-            eventDate: clock.now,
-            reason: "screen-locked"
-        )
-        schedulerStateStore.apply(result, to: schedulerStateRecord)
-        try? schedulerStateStore.save(schedulerStateRecord)
+        try? modelContext.save()
 
-        apply(snapshot: result.snapshot)
+        refreshRuntimeState(eventDate: clock.now)
         promptSearchText = ""
         refreshCheckInPromptState()
         dismissCheckInPrompt()
     }
 
     func handleIdleReturn() {
-        let result = scheduler.resolveReturnedIdleState(
-            state: schedulerStateRecord,
-            settings: settings,
-            eventDate: clock.now
-        )
-        schedulerStateStore.apply(result, to: schedulerStateRecord)
-        try? schedulerStateStore.save(schedulerStateRecord)
-
-        apply(snapshot: result.snapshot)
+        refreshRuntimeState(eventDate: clock.now, activityDate: clock.now)
         refreshCheckInPromptState()
         presentCheckInPromptIfNeeded()
     }
 
     @discardableResult
     private func resolvePendingIdleIfActivityResumed(activityDate: Date, referenceDate: Date) -> Bool {
-        guard isIdlePending else {
-            return false
-        }
-
-        guard let pendingIdleBoundary = pendingIdleEndedAt ?? pendingIdleStartedAt else {
-            return false
-        }
-
-        guard activityDate > pendingIdleBoundary else {
-            return false
-        }
-
-        let result = scheduler.resolveReturnedIdleState(
-            state: schedulerStateRecord,
-            settings: settings,
-            eventDate: referenceDate
-        )
-        schedulerStateStore.apply(result, to: schedulerStateRecord)
-        try? schedulerStateStore.save(schedulerStateRecord)
-
-        apply(snapshot: result.snapshot)
+        let priorEndedAt = pendingIdleEndedAt
+        refreshRuntimeState(eventDate: referenceDate, activityDate: activityDate)
         refreshCheckInPromptState()
         presentCheckInPromptIfNeeded()
-        return true
+        return isIdlePending && pendingIdleEndedAt != priorEndedAt
     }
 
     func renameProject(_ project: ProjectRecord, to newName: String) throws {
@@ -707,20 +663,7 @@ final class TempoAppModel {
             return
         }
 
-        if isIdlePending || isSilenced {
-            recoverSchedulerState(eventDate: clock.now)
-            return
-        }
-
-        let result = scheduler.rescheduleFromSettingsChange(
-            state: schedulerStateRecord,
-            settings: settings,
-            eventDate: clock.now
-        )
-        schedulerStateStore.apply(result, to: schedulerStateRecord)
-        try schedulerStateStore.save(schedulerStateRecord)
-
-        apply(snapshot: result.snapshot)
+        recoverSchedulerState(eventDate: clock.now)
         refreshCheckInPromptState()
     }
 
@@ -827,7 +770,12 @@ final class TempoAppModel {
         return try? modelContext.fetch(descriptor).first(where: { $0.project != nil })
     }
 
-    private func persistProjectCheckIn(_ project: ProjectRecord, at timestamp: Date, source: String) throws {
+    private func latestCheckInRecord() -> CheckInRecord? {
+        let descriptor = FetchDescriptor<CheckInRecord>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    private func persistProjectCheckIn(_ project: ProjectRecord, at timestamp: Date, source: String) {
         modelContext.insert(
             CheckInRecord(
                 timestamp: timestamp,
@@ -836,10 +784,19 @@ final class TempoAppModel {
                 project: project
             )
         )
-        try modelContext.save()
     }
 
-    private func persistIdleCheckIn(at timestamp: Date, idleKind: TimeAllocationIdleKind, source: String) throws {
+    private func persistResumeCheckIn(at timestamp: Date, source: String) {
+        modelContext.insert(
+            CheckInRecord(
+                timestamp: timestamp,
+                kind: "resume",
+                source: source
+            )
+        )
+    }
+
+    private func persistIdleCheckIn(at timestamp: Date, idleKind: TimeAllocationIdleKind, source: String) {
         modelContext.insert(
             CheckInRecord(
                 timestamp: timestamp,
@@ -848,26 +805,6 @@ final class TempoAppModel {
                 idleKind: idleKind.rawValue
             )
         )
-        try modelContext.save()
-    }
-
-    private func completePendingIdleResolution() throws {
-        let completionResult = scheduler.completeCheckIn(
-            state: schedulerStateRecord,
-            settings: settings,
-            completionDate: clock.now
-        )
-        schedulerStateStore.apply(completionResult, to: schedulerStateRecord)
-        try schedulerStateStore.save(schedulerStateRecord)
-
-        apply(snapshot: completionResult.snapshot)
-        promptPresentedAt = nil
-        selectedPromptProjectID = nil
-        idleSplitSecondProjectID = nil
-        idleSplitFirstDurationMinutes = 1
-        promptSearchText = ""
-        refreshCheckInPromptState()
-        dismissCheckInPrompt()
     }
 
     private func syncPromptSelection() {
@@ -994,35 +931,122 @@ final class TempoAppModel {
         })
     }
 
-    func recoverSchedulerState(eventDate: Date) {
-        let result = scheduler.updateState(
-            schedulerStateRecord,
-            settings: settings,
-            eventDate: eventDate
-        )
-
-        schedulerStateStore.apply(result, to: schedulerStateRecord)
-        try? schedulerStateStore.save(schedulerStateRecord)
-        apply(snapshot: result.snapshot)
+    func recoverSchedulerState(eventDate: Date, activityDate: Date? = nil) {
+        refreshRuntimeState(eventDate: eventDate, activityDate: activityDate)
         refreshCheckInPromptState()
         launchState = .ready
     }
 
-    private func apply(snapshot: PollingSchedulerSnapshot) {
-        nextCheckInAt = snapshot.nextCheckInAt
-        isPromptOverdue = snapshot.isPromptOverdue
-        accountableElapsedInterval = snapshot.accountableElapsedInterval
-        isSilenced = snapshot.isSilenced
-        silenceEndsAt = snapshot.silenceEndsAt
-        isIdlePending = snapshot.isIdlePending
-        pendingIdleStartedAt = snapshot.pendingIdleStartedAt
-        pendingIdleEndedAt = snapshot.pendingIdleEndedAt
-        pendingIdleReason = snapshot.pendingIdleReason
-        pendingIdleDuration = max((snapshot.pendingIdleEndedAt ?? snapshot.pendingIdleStartedAt ?? clock.now).timeIntervalSince(snapshot.pendingIdleStartedAt ?? clock.now), 0)
-        if !snapshot.isPromptOverdue {
+    private func refreshRuntimeState(eventDate: Date, activityDate: Date? = nil) {
+        apply(runtimeState: deriveRuntimeState(eventDate: eventDate, activityDate: activityDate))
+    }
+
+    private func deriveRuntimeState(eventDate: Date, activityDate: Date? = nil) -> DerivedRuntimeState {
+        let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
+
+        guard let latestCheckIn = latestCheckInRecord() else {
+            return DerivedRuntimeState(
+                nextCheckInAt: eventDate.addingTimeInterval(pollingInterval),
+                isPromptOverdue: false,
+                accountableElapsedInterval: pollingInterval,
+                isSilenced: false,
+                silenceEndsAt: nil,
+                isIdlePending: false,
+                pendingIdleStartedAt: nil,
+                pendingIdleEndedAt: nil,
+                pendingIdleReason: nil
+            )
+        }
+
+        if latestCheckIn.kind == "project" || latestCheckIn.kind == "resume" {
+            let nextCheckInAt = latestCheckIn.timestamp.addingTimeInterval(pollingInterval)
+            let isPromptOverdue = eventDate >= nextCheckInAt
+            let accountableElapsedInterval = isPromptOverdue
+                ? max(eventDate.timeIntervalSince(latestCheckIn.timestamp), pollingInterval)
+                : pollingInterval
+
+            return DerivedRuntimeState(
+                nextCheckInAt: nextCheckInAt,
+                isPromptOverdue: isPromptOverdue,
+                accountableElapsedInterval: accountableElapsedInterval,
+                isSilenced: false,
+                silenceEndsAt: nil,
+                isIdlePending: false,
+                pendingIdleStartedAt: nil,
+                pendingIdleEndedAt: nil,
+                pendingIdleReason: nil
+            )
+        }
+
+        guard
+            latestCheckIn.kind == "idle",
+            let idleKindRawValue = latestCheckIn.idleKind,
+            let idleKind = TimeAllocationIdleKind(rawValue: idleKindRawValue)
+        else {
+            return DerivedRuntimeState(
+                nextCheckInAt: eventDate.addingTimeInterval(pollingInterval),
+                isPromptOverdue: false,
+                accountableElapsedInterval: pollingInterval,
+                isSilenced: false,
+                silenceEndsAt: nil,
+                isIdlePending: false,
+                pendingIdleStartedAt: nil,
+                pendingIdleEndedAt: nil,
+                pendingIdleReason: nil
+            )
+        }
+
+        if idleKind == .doneForDay {
+            let silenceEndsAt = nextDayCutoff(after: latestCheckIn.timestamp, dayCutoffHour: settings.analyticsDayCutoffHour)
+            let isSilenced = eventDate < silenceEndsAt
+            return DerivedRuntimeState(
+                nextCheckInAt: nil,
+                isPromptOverdue: false,
+                accountableElapsedInterval: 0,
+                isSilenced: isSilenced,
+                silenceEndsAt: isSilenced ? silenceEndsAt : nil,
+                isIdlePending: false,
+                pendingIdleStartedAt: nil,
+                pendingIdleEndedAt: nil,
+                pendingIdleReason: nil
+            )
+        }
+
+        let resolvedActivityDate = activityDate ?? currentUserActivityDate(referenceDate: eventDate)
+        let pendingIdleEndedAt = resolvedActivityDate > latestCheckIn.timestamp ? resolvedActivityDate : nil
+
+        return DerivedRuntimeState(
+            nextCheckInAt: nil,
+            isPromptOverdue: false,
+            accountableElapsedInterval: 0,
+            isSilenced: false,
+            silenceEndsAt: nil,
+            isIdlePending: true,
+            pendingIdleStartedAt: latestCheckIn.timestamp,
+            pendingIdleEndedAt: pendingIdleEndedAt,
+            pendingIdleReason: latestCheckIn.source
+        )
+    }
+
+    private func apply(runtimeState: DerivedRuntimeState) {
+        nextCheckInAt = runtimeState.nextCheckInAt
+        isPromptOverdue = runtimeState.isPromptOverdue
+        accountableElapsedInterval = runtimeState.accountableElapsedInterval
+        isSilenced = runtimeState.isSilenced
+        silenceEndsAt = runtimeState.silenceEndsAt
+        isIdlePending = runtimeState.isIdlePending
+        pendingIdleStartedAt = runtimeState.pendingIdleStartedAt
+        pendingIdleEndedAt = runtimeState.pendingIdleEndedAt
+        pendingIdleReason = runtimeState.pendingIdleReason
+        pendingIdleDuration = max(
+            (runtimeState.pendingIdleEndedAt ?? runtimeState.pendingIdleStartedAt ?? clock.now)
+                .timeIntervalSince(runtimeState.pendingIdleStartedAt ?? clock.now),
+            0
+        )
+        if !runtimeState.isPromptOverdue {
             promptPresentedAt = nil
         }
-        if !snapshot.isIdlePending {
+        if !runtimeState.isIdlePending {
             selectedPromptProjectID = nil
             idleSplitSecondProjectID = nil
             idleSplitFirstDurationMinutes = 1
@@ -1031,8 +1055,19 @@ final class TempoAppModel {
         schedulePromptTimerIfNeeded()
     }
 
+    private func latestSchedulingAnchorDate() -> Date? {
+        latestCheckInRecord()?.timestamp
+    }
+
+    private func nextDayCutoff(after date: Date, dayCutoffHour: Int) -> Date {
+        let shiftedDate = calendar.date(byAdding: .hour, value: -dayCutoffHour, to: date) ?? date
+        let shiftedStartOfDay = calendar.startOfDay(for: shiftedDate)
+        let nextShiftedDay = calendar.date(byAdding: .day, value: 1, to: shiftedStartOfDay) ?? shiftedStartOfDay
+        return calendar.date(byAdding: .hour, value: dayCutoffHour, to: nextShiftedDay) ?? nextShiftedDay
+    }
+
     private var shouldPresentPendingIdlePrompt: Bool {
-        isIdlePending && schedulerStateRecord.idleResolvedAt != nil
+        isIdlePending && pendingIdleEndedAt != nil
     }
 
     var detachedCheckInPromptState: CheckInPromptState {
@@ -1099,11 +1134,11 @@ final class TempoAppModel {
     }
 
     private var promptIdleMarkAt: Date? {
-        guard isPromptOverdue, !isIdlePending, let promptPresentedAt else {
+        guard isPromptOverdue, !isIdlePending, let nextCheckInAt else {
             return nil
         }
 
-        return promptPresentedAt.addingTimeInterval(TimeInterval(settings.idleThresholdMinutes * 60))
+        return nextCheckInAt.addingTimeInterval(TimeInterval(settings.idleThresholdMinutes * 60))
     }
 
     func promptSupportingSubtitle(at date: Date) -> String {
@@ -1142,32 +1177,19 @@ final class TempoAppModel {
             return false
         }
 
-        try? persistIdleCheckIn(
+        guard latestCheckInRecord()?.kind != "idle" else {
+            refreshRuntimeState(eventDate: referenceDate)
+            return false
+        }
+
+        persistIdleCheckIn(
             at: promptIdleMarkAt,
             idleKind: .snoozed,
             source: "snoozed"
         )
+        try? modelContext.save()
 
-        let result = scheduler.beginIdleInterval(
-            state: schedulerStateRecord,
-            settings: settings,
-            eventDate: promptIdleMarkAt,
-            reason: "snoozed"
-        )
-        var adjustedResult = result
-        adjustedResult.snapshot.accountableWorkEndAt = promptIdleMarkAt
-        adjustedResult.snapshot.pendingIdleStartedAt = promptIdleMarkAt
-        adjustedResult.snapshot.pendingIdleEndedAt = referenceDate
-        adjustedResult.accountableWorkEndAt = promptIdleMarkAt
-        adjustedResult.idleBeganAt = promptIdleMarkAt
-        adjustedResult.idleResolvedAt = referenceDate
-        adjustedResult.pendingIdleStartedAt = promptIdleMarkAt
-        adjustedResult.pendingIdleEndedAt = referenceDate
-
-        schedulerStateStore.apply(adjustedResult, to: schedulerStateRecord)
-        try? schedulerStateStore.save(schedulerStateRecord)
-
-        apply(snapshot: adjustedResult.snapshot)
+        refreshRuntimeState(eventDate: referenceDate)
         promptSearchText = ""
         refreshCheckInPromptState()
         presentCheckInPromptIfNeeded()

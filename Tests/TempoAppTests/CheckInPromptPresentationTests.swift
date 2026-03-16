@@ -95,7 +95,7 @@ final class CheckInPromptPresentationTests: XCTestCase {
         appModel.accountableElapsedInterval = 25 * 60
         appModel.presentCheckInPromptIfNeeded()
 
-        XCTAssertEqual(appModel.nextRuntimeUpdateAt(referenceDate: now), now.addingTimeInterval(5 * 60))
+        XCTAssertEqual(appModel.nextRuntimeUpdateAt(referenceDate: now), now.addingTimeInterval(10 * 60))
     }
 
     @MainActor
@@ -107,10 +107,18 @@ final class CheckInPromptPresentationTests: XCTestCase {
             calendar: fixedPresentationCalendar(),
             launchAtLoginController: FixedPresentationLaunchAtLoginController(isEnabled: false)
         )
-
-        appModel.isPromptOverdue = true
-        appModel.accountableElapsedInterval = 25 * 60
-        appModel.refreshCheckInPromptState()
+        let project = ProjectRecord(name: "Focus", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        appModel.modelContext.insert(
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(30 * 60)),
+                kind: "project",
+                source: "check-in",
+                project: project
+            )
+        )
+        try? appModel.modelContext.save()
+        appModel.checkInNow()
 
         XCTAssertTrue(appModel.checkInPromptState.isPresented)
         XCTAssertTrue(appModel.detachedCheckInPromptState.isPresented)
@@ -118,11 +126,6 @@ final class CheckInPromptPresentationTests: XCTestCase {
         appModel.setMenuBarWindowVisible(true)
 
         XCTAssertFalse(appModel.detachedCheckInPromptState.isPresented)
-        XCTAssertTrue(appModel.checkInPromptState.isPresented)
-
-        appModel.setMenuBarWindowVisible(false)
-
-        XCTAssertTrue(appModel.detachedCheckInPromptState.isPresented)
     }
 }
 

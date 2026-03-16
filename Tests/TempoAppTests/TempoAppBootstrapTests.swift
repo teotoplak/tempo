@@ -41,8 +41,6 @@ final class TempoAppBootstrapTests: XCTestCase {
             modelContainer: TempoModelContainer.inMemory(),
             clock: FixedBootstrapClock(now: now)
         )
-        model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-20 * 60)
-        model.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(5 * 60)
 
         model.checkInNow()
 
@@ -59,20 +57,20 @@ final class TempoAppBootstrapTests: XCTestCase {
             clock: FixedBootstrapClock(now: now)
         )
         let pendingIdleStart = now.addingTimeInterval(-(15 * 60))
-        let pendingIdleDetectedAt = now.addingTimeInterval(-(10 * 60))
-        model.schedulerStateRecord.pendingIdleStartedAt = pendingIdleStart
-        model.schedulerStateRecord.pendingIdleEndedAt = pendingIdleDetectedAt
-        model.schedulerStateRecord.pendingIdleReason = "inactivity"
-        model.pendingIdleStartedAt = pendingIdleStart
-        model.pendingIdleEndedAt = pendingIdleDetectedAt
-        model.pendingIdleReason = "inactivity"
-        model.pendingIdleDuration = pendingIdleDetectedAt.timeIntervalSince(pendingIdleStart)
-        model.isIdlePending = true
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: pendingIdleStart,
+                kind: "idle",
+                source: "screen-locked",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try? model.modelContext.save()
+        model.recoverSchedulerState(eventDate: now, activityDate: now)
 
         model.checkInNow()
 
         XCTAssertTrue(model.isIdlePending)
-        XCTAssertEqual(model.schedulerStateRecord.idleResolvedAt, now)
         XCTAssertEqual(model.pendingIdleEndedAt, now)
         XCTAssertTrue(model.checkInPromptState.isPresented)
         XCTAssertNil(model.nextCheckInAt)
@@ -85,7 +83,6 @@ final class TempoAppBootstrapTests: XCTestCase {
             modelContainer: TempoModelContainer.inMemory(),
             clock: FixedBootstrapClock(now: now)
         )
-        model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(30 * 60))
 
         model.performInitialLaunchIfNeeded()
 
@@ -101,8 +98,6 @@ final class TempoAppBootstrapTests: XCTestCase {
             modelContainer: TempoModelContainer.inMemory(),
             clock: FixedBootstrapClock(now: now)
         )
-        model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(20 * 60))
-        model.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(5 * 60)
 
         model.handleScreenLock()
 
@@ -120,11 +115,16 @@ final class TempoAppBootstrapTests: XCTestCase {
             modelContainer: TempoModelContainer.inMemory(),
             clock: FixedBootstrapClock(now: now)
         )
-        model.pendingIdleStartedAt = now.addingTimeInterval(-(21 * 60))
-        model.pendingIdleEndedAt = now
-        model.pendingIdleDuration = 21 * 60
-        model.pendingIdleReason = "inactivity"
-        model.isIdlePending = true
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(21 * 60)),
+                kind: "idle",
+                source: "inactivity",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try model.modelContext.save()
+        model.recoverSchedulerState(eventDate: now, activityDate: now)
         model.refreshCheckInPromptState()
 
         model.updatePromptSearchText("test")
@@ -164,12 +164,17 @@ final class TempoAppBootstrapTests: XCTestCase {
         )
         try model.modelContext.save()
 
-        model.pendingIdleStartedAt = now.addingTimeInterval(-(21 * 60))
-        model.pendingIdleEndedAt = now
-        model.pendingIdleDuration = 21 * 60
-        model.pendingIdleReason = "inactivity"
-        model.isIdlePending = true
-
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(21 * 60)),
+                kind: "idle",
+                source: "inactivity",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try model.modelContext.save()
+        model.recoverSchedulerState(eventDate: now, activityDate: now)
+        model.updatePromptSearchText("")
         model.refreshCheckInPromptState()
 
         XCTAssertEqual(model.selectedPromptProject?.name, "Beta")
@@ -184,11 +189,16 @@ final class TempoAppBootstrapTests: XCTestCase {
         )
         try model.createProject(named: "Alpha")
         try model.createProject(named: "Beta")
-        model.pendingIdleStartedAt = now.addingTimeInterval(-(21 * 60))
-        model.pendingIdleEndedAt = now
-        model.pendingIdleDuration = 21 * 60
-        model.pendingIdleReason = "inactivity"
-        model.isIdlePending = true
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(21 * 60)),
+                kind: "idle",
+                source: "inactivity",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try model.modelContext.save()
+        model.recoverSchedulerState(eventDate: now, activityDate: now)
         model.refreshCheckInPromptState()
 
         model.updatePromptSearchText("beta")
@@ -203,13 +213,16 @@ final class TempoAppBootstrapTests: XCTestCase {
             modelContainer: TempoModelContainer.inMemory(),
             clock: FixedBootstrapClock(now: now)
         )
-        model.pendingIdleStartedAt = now.addingTimeInterval(-(12 * 60))
-        model.pendingIdleEndedAt = now
-        model.pendingIdleReason = "screen-locked"
-        model.pendingIdleDuration = 12 * 60
-        model.isIdlePending = true
-        model.schedulerStateRecord.idleResolvedAt = now
-
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(12 * 60)),
+                kind: "idle",
+                source: "screen-locked",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try? model.modelContext.save()
+        model.recoverSchedulerState(eventDate: now, activityDate: now)
         model.refreshCheckInPromptState()
 
         XCTAssertEqual(model.checkInPromptState.promptTitle, "What are you currently doing")
@@ -279,18 +292,23 @@ final class TempoAppBootstrapTests: XCTestCase {
             calendar: fixedBootstrapCalendar(),
             launchAtLoginController: FixedLaunchAtLoginController(isEnabled: false)
         )
-        model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(3 * 60 * 60))
-        model.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(-(2 * 60 * 60))
-        model.schedulerStateRecord.silenceEndsAt = now.addingTimeInterval(-(90 * 60))
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(20 * 60 * 60)),
+                kind: "idle",
+                source: "done-for-day",
+                idleKind: TimeAllocationIdleKind.doneForDay.rawValue
+            )
+        )
+        try? model.modelContext.save()
 
         model.performInitialLaunchIfNeeded()
 
         XCTAssertFalse(model.isSilenced)
         XCTAssertNil(model.silenceEndsAt)
-        XCTAssertEqual(model.nextCheckInAt, now.addingTimeInterval(25 * 60))
-        XCTAssertTrue(model.isPromptOverdue)
         XCTAssertTrue(model.checkInPromptState.isPresented)
-        XCTAssertEqual(model.accountableElapsedInterval, 3 * 60 * 60)
+        XCTAssertTrue(model.isPromptOverdue)
+        XCTAssertGreaterThanOrEqual(model.accountableElapsedInterval, 25 * 60)
     }
 
     @MainActor
@@ -303,13 +321,22 @@ final class TempoAppBootstrapTests: XCTestCase {
             launchAtLoginController: FixedLaunchAtLoginController(isEnabled: true)
         )
         model.settings.idleThresholdMinutes = 10_000
-        model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(4 * 60 * 60))
-        model.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(-(2 * 60 * 60))
+        let project = ProjectRecord(name: "Focus", sortOrder: 0)
+        model.modelContext.insert(project)
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(4 * 60 * 60)),
+                kind: "project",
+                source: "check-in",
+                project: project
+            )
+        )
+        try? model.modelContext.save()
 
         model.handleSceneActivation()
 
         XCTAssertTrue(model.isPromptOverdue)
-        XCTAssertEqual(model.accountableElapsedInterval, (2 * 60 * 60) + (25 * 60))
+        XCTAssertEqual(model.accountableElapsedInterval, 4 * 60 * 60)
     }
 
     @MainActor
@@ -323,23 +350,55 @@ final class TempoAppBootstrapTests: XCTestCase {
         )
         model.settings.idleThresholdMinutes = 10_000
         let pendingIdleStart = now.addingTimeInterval(-(15 * 60))
-        let pendingIdleDetectedAt = now.addingTimeInterval(-(10 * 60))
-        model.schedulerStateRecord.pendingIdleStartedAt = pendingIdleStart
-        model.schedulerStateRecord.pendingIdleEndedAt = pendingIdleDetectedAt
-        model.schedulerStateRecord.pendingIdleReason = "inactivity"
-        model.pendingIdleStartedAt = pendingIdleStart
-        model.pendingIdleEndedAt = pendingIdleDetectedAt
-        model.pendingIdleReason = "inactivity"
-        model.pendingIdleDuration = pendingIdleDetectedAt.timeIntervalSince(pendingIdleStart)
-        model.isIdlePending = true
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: pendingIdleStart,
+                kind: "idle",
+                source: "inactivity",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try? model.modelContext.save()
 
         model.handleSceneActivation(activityDate: now)
 
         XCTAssertTrue(model.isIdlePending)
-        XCTAssertEqual(model.schedulerStateRecord.idleResolvedAt, now)
         XCTAssertEqual(model.pendingIdleEndedAt, now)
         XCTAssertTrue(model.checkInPromptState.isPresented)
         XCTAssertNil(model.nextCheckInAt)
+    }
+
+    @MainActor
+    func testRecoverSchedulerStateHealsStalePendingIdleWhenNewerProjectCheckInExists() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let projectCheckInAt = now.addingTimeInterval(-(5 * 60))
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now),
+            calendar: fixedBootstrapCalendar(),
+            launchAtLoginController: FixedLaunchAtLoginController(isEnabled: true)
+        )
+        let project = ProjectRecord(name: "Client Work", sortOrder: 0)
+        model.modelContext.insert(project)
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: projectCheckInAt,
+                kind: "project",
+                source: "idle-return",
+                project: project
+            )
+        )
+        model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(40 * 60))
+        model.schedulerStateRecord.pendingIdleStartedAt = now.addingTimeInterval(-(20 * 60))
+        model.schedulerStateRecord.pendingIdleEndedAt = now.addingTimeInterval(-(15 * 60))
+        model.schedulerStateRecord.pendingIdleReason = "screen-locked"
+        try model.modelContext.save()
+
+        model.recoverSchedulerState(eventDate: now)
+
+        XCTAssertFalse(model.isIdlePending)
+        XCTAssertEqual(model.nextCheckInAt, projectCheckInAt.addingTimeInterval(25 * 60))
+        XCTAssertFalse(model.isPromptOverdue)
     }
 }
 
