@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoApp'
+relocations:     []
+...

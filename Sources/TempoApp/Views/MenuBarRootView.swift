@@ -12,11 +12,7 @@ struct MenuBarRootView: View {
 
     var body: some View {
         Group {
-            if appModel.checkInPromptState.isPresented {
-                inlinePromptContent
-            } else {
-                defaultMenuContent
-            }
+            defaultMenuContent
         }
         .background(
             Color(nsColor: .windowBackgroundColor)
@@ -120,24 +116,6 @@ struct MenuBarRootView: View {
         .frame(idealHeight: 420, maxHeight: 460)
     }
 
-    private var inlinePromptContent: some View {
-        ScrollView {
-            CheckInPromptView(
-                appModel: appModel,
-                state: appModel.checkInPromptState,
-                presentationStyle: .inline
-            )
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(12)
-        }
-        .scrollIndicators(.never)
-        .frame(width: appModel.isIdlePending ? 620 : 360)
-        .frame(
-            idealHeight: appModel.isIdlePending ? 560 : 360,
-            maxHeight: appModel.isIdlePending ? 640 : 420
-        )
-    }
-
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
             Image(systemName: "metronome.fill")
@@ -176,7 +154,10 @@ struct MenuBarRootView: View {
 
     private var primaryActionButton: some View {
         Button {
-            appModel.checkInNow()
+            presentDetachedPrompt {
+                appModel.checkInNow()
+                appModel.presentCheckInPromptIfNeeded()
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "bolt.fill")
@@ -196,6 +177,15 @@ struct MenuBarRootView: View {
             .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    private func presentDetachedPrompt(_ action: @escaping () -> Void) {
+        appModel.setMenuBarWindowVisible(false)
+        NSApplication.shared.keyWindow?.orderOut(nil)
+
+        DispatchQueue.main.async {
+            action()
+        }
     }
 
     private func secondaryActionButton(title: String, icon: String, action: @escaping () -> Void) -> some View {

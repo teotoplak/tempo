@@ -88,6 +88,89 @@ final class TempoAppBootstrapTests: XCTestCase {
     }
 
     @MainActor
+    func testSubmitPromptSearchCreatesProjectWhenQueryIsNew() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now)
+        )
+        model.pendingIdleStartedAt = now.addingTimeInterval(-(21 * 60))
+        model.pendingIdleEndedAt = now
+        model.pendingIdleDuration = 21 * 60
+        model.pendingIdleReason = "inactivity"
+        model.isIdlePending = true
+        model.refreshCheckInPromptState()
+
+        model.updatePromptSearchText("test")
+        try model.submitPromptSearch()
+
+        XCTAssertFalse(model.canCreatePromptProject(named: "test"))
+        XCTAssertEqual(model.selectedPromptProject?.name, "test")
+    }
+
+    @MainActor
+    func testIdleResolutionDefaultsToLatestAssignedProject() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now)
+        )
+        try model.createProject(named: "Alpha")
+        try model.createProject(named: "Beta")
+
+        let latestProject = try XCTUnwrap(model.recentPromptProjects.first(where: { $0.name == "Beta" }))
+        let earlierProject = try XCTUnwrap(model.recentPromptProjects.first(where: { $0.name == "Alpha" }))
+        model.modelContext.insert(
+            TimeEntryRecord(
+                project: earlierProject,
+                startAt: now.addingTimeInterval(-(40 * 60)),
+                endAt: now.addingTimeInterval(-(30 * 60)),
+                source: "test"
+            )
+        )
+        model.modelContext.insert(
+            TimeEntryRecord(
+                project: latestProject,
+                startAt: now.addingTimeInterval(-(20 * 60)),
+                endAt: now.addingTimeInterval(-(10 * 60)),
+                source: "test"
+            )
+        )
+        try model.modelContext.save()
+
+        model.pendingIdleStartedAt = now.addingTimeInterval(-(21 * 60))
+        model.pendingIdleEndedAt = now
+        model.pendingIdleDuration = 21 * 60
+        model.pendingIdleReason = "inactivity"
+        model.isIdlePending = true
+
+        model.refreshCheckInPromptState()
+
+        XCTAssertEqual(model.selectedPromptProject?.name, "Beta")
+    }
+
+    @MainActor
+    func testUpdatePromptSearchTextSelectsExactMatchForOneClickIdleAssignment() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now)
+        )
+        try model.createProject(named: "Alpha")
+        try model.createProject(named: "Beta")
+        model.pendingIdleStartedAt = now.addingTimeInterval(-(21 * 60))
+        model.pendingIdleEndedAt = now
+        model.pendingIdleDuration = 21 * 60
+        model.pendingIdleReason = "inactivity"
+        model.isIdlePending = true
+        model.refreshCheckInPromptState()
+
+        model.updatePromptSearchText("beta")
+
+        XCTAssertEqual(model.selectedPromptProject?.name, "Beta")
+    }
+
+    @MainActor
     func testIdleResolutionPromptBlocksStandardCheckInCopy() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = TempoAppModel(
@@ -137,7 +220,7 @@ final class TempoAppBootstrapTests: XCTestCase {
         XCTAssertTrue(menuSource.contains("Settings"))
         XCTAssertTrue(menuSource.contains("Quit Tempo"))
         XCTAssertTrue(menuSource.contains("appModel.setMenuBarWindowVisible(true)"))
-        XCTAssertTrue(menuSource.contains("CheckInPromptView("))
+        XCTAssertFalse(menuSource.contains("inlinePromptContent"))
     }
 
     @MainActor

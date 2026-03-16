@@ -50,18 +50,23 @@ final class AnalyticsStore {
         let period = period(for: range, referenceDate: referenceDate, calendar: calendar)
         let descriptor = FetchDescriptor<TimeEntryRecord>(sortBy: [SortDescriptor(\.startAt)])
         let entries = ((try? modelContext.fetch(descriptor)) ?? []).filter { entry in
-            entry.endAt >= period.startDate && entry.endAt < period.endDate
+            entry.endAt > period.startDate && entry.startAt < period.endDate
         }
+        let timelineIntervals = entries.compactMap { clippedInterval(for: $0, within: period) }
 
-        let totalDuration = entries.reduce(into: 0.0) { total, entry in
-            total += entry.endAt.timeIntervalSince(entry.startAt)
+        let totalDuration = timelineIntervals.reduce(into: 0.0) { total, interval in
+            total += interval.endDate.timeIntervalSince(interval.startDate)
         }
 
         var grouped: [UUID?: (name: String, duration: TimeInterval, count: Int)] = [:]
         for entry in entries {
+            guard let interval = clippedInterval(for: entry, within: period) else {
+                continue
+            }
+
             let projectID = entry.project?.id
             let projectName = entry.project?.name ?? "Unassigned"
-            let duration = entry.endAt.timeIntervalSince(entry.startAt)
+            let duration = interval.endDate.timeIntervalSince(interval.startDate)
             let current = grouped[projectID] ?? (name: projectName, duration: 0, count: 0)
             grouped[projectID] = (
                 name: projectName,
@@ -91,7 +96,26 @@ final class AnalyticsStore {
             period: period,
             totalDuration: totalDuration,
             projectSummaries: projectSummaries,
-            topProjectName: projectSummaries.first?.projectName
+            topProjectName: projectSummaries.first?.projectName,
+            firstEntryStartDate: range == .day ? timelineIntervals.first?.startDate : nil,
+            timelineIntervals: range == .day ? timelineIntervals : []
+        )
+    }
+
+    private func clippedInterval(
+        for entry: TimeEntryRecord,
+        within period: AnalyticsPeriod
+    ) -> AnalyticsTimelineInterval? {
+        let clippedStart = max(entry.startAt, period.startDate)
+        let clippedEnd = min(entry.endAt, period.endDate)
+        guard clippedEnd > clippedStart else {
+            return nil
+        }
+
+        return AnalyticsTimelineInterval(
+            startDate: clippedStart,
+            endDate: clippedEnd,
+            projectName: entry.project?.name ?? "Unassigned"
         )
     }
 

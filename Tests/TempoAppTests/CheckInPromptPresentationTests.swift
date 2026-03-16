@@ -20,7 +20,7 @@ final class CheckInPromptPresentationTests: XCTestCase {
 
         let panel = CheckInPromptWindowController.makePromptWindow(screenFrame: screenFrame)
 
-        XCTAssertEqual(panel.level, .floating)
+        XCTAssertEqual(panel.level, .statusBar)
         XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary))
         XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces))
         XCTAssertTrue(panel.canBecomeKey)
@@ -53,7 +53,7 @@ final class CheckInPromptPresentationTests: XCTestCase {
 
         XCTAssertEqual(
             CheckInPromptWindowController.promptSize(for: idleState),
-            CGSize(width: 620, height: 560)
+            CGSize(width: 392, height: 420)
         )
     }
 
@@ -72,11 +72,11 @@ final class CheckInPromptPresentationTests: XCTestCase {
             supportingSubtitle: "Elapsed 0 min"
         )
 
-        XCTAssertTrue(CheckInPromptWindowController.wantsBackdrop(for: idleState))
+        XCTAssertFalse(CheckInPromptWindowController.wantsBackdrop(for: idleState))
     }
 
     @MainActor
-    func testStandardPromptAnchorsBelowMenuBarWindow() {
+    func testStandardPromptCentersOnScreen() {
         let visibleFrame = CGRect(x: 0, y: 0, width: 1440, height: 840)
         let anchorRect = CGRect(x: 80, y: 760, width: 288, height: 320)
 
@@ -86,9 +86,9 @@ final class CheckInPromptPresentationTests: XCTestCase {
             anchorRect: anchorRect
         )
 
-        XCTAssertEqual(frame.origin.y, 432)
+        XCTAssertEqual(frame.origin.x, 540)
+        XCTAssertEqual(frame.origin.y, 260)
         XCTAssertEqual(frame.size, CGSize(width: 360, height: 320))
-        XCTAssertEqual(frame.midX, anchorRect.midX, accuracy: 0.001)
     }
 
     @MainActor

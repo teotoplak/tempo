@@ -95,6 +95,8 @@ final class TempoAppModel {
     var analyticsTotalDuration: TimeInterval = 0
     var analyticsProjectSummaries: [AnalyticsProjectSummary] = []
     var analyticsTopProjectName: String?
+    var analyticsFirstEntryStartDate: Date?
+    var analyticsTimelineIntervals: [AnalyticsTimelineInterval] = []
     var analyticsExportStatusMessage: String?
     var analyticsExportErrorMessage: String?
     var launchAtLoginEnabled = false
@@ -370,6 +372,14 @@ final class TempoAppModel {
         return "\(topProject.projectName) · \(Self.formattedTrackedDuration(topProject.totalDuration))"
     }
 
+    var analyticsFirstEntryStartText: String {
+        guard let analyticsFirstEntryStartDate else {
+            return "No input yet"
+        }
+
+        return Self.formattedClockTime(analyticsFirstEntryStartDate)
+    }
+
     var selectedPromptProject: ProjectRecord? {
         guard let selectedPromptProjectID else {
             return nil
@@ -440,6 +450,42 @@ final class TempoAppModel {
         return !fetchProjects().contains { project in
             project.name.compare(trimmedName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
         }
+    }
+
+    func updatePromptSearchText(_ rawText: String) {
+        promptSearchText = rawText
+        syncPromptSelection()
+    }
+
+    func submitPromptSearch() throws {
+        let trimmedQuery = promptSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            return
+        }
+
+        if canCreatePromptProject(named: trimmedQuery) {
+            try createAndSelectProjectForPrompt(named: trimmedQuery)
+            return
+        }
+
+        if isIdlePending {
+            if let selectedPromptProject {
+                try assignPendingIdle(to: selectedPromptProject)
+            }
+            return
+        }
+
+        if let selectedPromptProject {
+            try selectProjectForPrompt(selectedPromptProject)
+        }
+    }
+
+    func assignSelectedPromptProjectForPendingIdle() throws {
+        guard let selectedPromptProject else {
+            return
+        }
+
+        try assignPendingIdle(to: selectedPromptProject)
     }
 
     func createProject(named name: String) throws {
@@ -742,6 +788,8 @@ final class TempoAppModel {
         analyticsTotalDuration = snapshot.totalDuration
         analyticsProjectSummaries = snapshot.projectSummaries
         analyticsTopProjectName = snapshot.topProjectName
+        analyticsFirstEntryStartDate = snapshot.firstEntryStartDate
+        analyticsTimelineIntervals = snapshot.timelineIntervals
     }
 
     func exportAnalyticsCSV() {
@@ -833,6 +881,47 @@ final class TempoAppModel {
         dismissCheckInPrompt()
     }
 
+    private func syncPromptSelection() {
+        let filteredProjects = filteredPromptProjects
+        let trimmedQuery = promptSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if filteredProjects.isEmpty {
+            selectedPromptProjectID = preferredPromptProject()?.id
+            if isIdlePending {
+                idleSplitSecondProjectID = selectedPromptProjectID
+            }
+            return
+        }
+
+        if trimmedQuery.isEmpty {
+            let preferredProjectID = preferredPromptProject()?.id ?? filteredProjects.first?.id
+            selectedPromptProjectID = preferredProjectID
+            if isIdlePending {
+                idleSplitSecondProjectID = preferredProjectID
+            }
+            return
+        }
+
+        if let exactMatch = filteredProjects.first(where: { project in
+            project.name.compare(trimmedQuery, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }) {
+            selectedPromptProjectID = exactMatch.id
+            if isIdlePending {
+                idleSplitSecondProjectID = exactMatch.id
+            }
+            return
+        }
+
+        if let selectedPromptProjectID, filteredProjects.contains(where: { $0.id == selectedPromptProjectID }) {
+            return
+        }
+
+        selectedPromptProjectID = filteredProjects.first?.id
+        if isIdlePending {
+            idleSplitSecondProjectID = filteredProjects.first?.id
+        }
+    }
+
     private func ensureIdleSelectionDefaults() {
         guard isIdlePending else {
             return
@@ -841,11 +930,11 @@ final class TempoAppModel {
         let projects = filteredPromptProjects.isEmpty ? recentPromptProjects : filteredPromptProjects
 
         if selectedPromptProject == nil {
-            selectedPromptProjectID = projects.first?.id
+            selectedPromptProjectID = preferredPromptProject(in: projects)?.id
         }
 
         if idleSplitSecondProject == nil {
-            idleSplitSecondProjectID = projects.first?.id
+            idleSplitSecondProjectID = preferredPromptProject(in: projects)?.id
         }
 
         let totalMinutes = max(Int(pendingIdleDuration / 60), 0)
@@ -855,6 +944,20 @@ final class TempoAppModel {
         } else {
             idleSplitFirstDurationMinutes = 1
         }
+    }
+
+    private func preferredPromptProject(in projects: [ProjectRecord]? = nil) -> ProjectRecord? {
+        let candidates = projects ?? recentPromptProjects
+        guard !candidates.isEmpty else {
+            return nil
+        }
+
+        if let latestProjectID = latestCompletedTimeEntry()?.project?.id,
+           let latestProject = candidates.first(where: { $0.id == latestProjectID }) {
+            return latestProject
+        }
+
+        return candidates.first
     }
 
     private func observeWorkspaceWake() {

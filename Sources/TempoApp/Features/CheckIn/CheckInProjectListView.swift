@@ -4,6 +4,7 @@ struct CheckInProjectListView: View {
     let projects: [ProjectRecord]
     let selectedProjectID: UUID?
     let onProjectTap: (ProjectRecord) -> Void
+    let onProjectDoubleTap: (ProjectRecord) -> Void
     var compact = false
 
     var body: some View {
@@ -29,6 +30,12 @@ struct CheckInProjectListView: View {
                         .background(backgroundColor(for: project), in: RoundedRectangle(cornerRadius: compact ? 10 : 16, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .simultaneousGesture(
+                        TapGesture(count: 2)
+                            .onEnded {
+                                onProjectDoubleTap(project)
+                            }
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

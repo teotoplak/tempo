@@ -1,0 +1,75 @@
+{
+  "": {
+    "swift-dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/master.swiftdeps"
+  },
+  "/Users/teo/src/tempo/Tests/TempoAppTests/AnalyticsAggregationTests.swift": {
+    "dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/AnalyticsAggregationTests.d",
+    "object": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/AnalyticsAggregationTests.swift.o",
+    "swiftmodule": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/AnalyticsAggregationTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/AnalyticsAggregationTests.swiftdeps",
+    "diagnostics": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/AnalyticsAggregationTests.dia"
+  },
+  "/Users/teo/src/tempo/Tests/TempoAppTests/AnalyticsPresentationTests.swift": {
+    "dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/AnalyticsPresentationTests.d",
+    "object": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/AnalyticsPresentationTests.swift.o",
+    "swiftmodule": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/AnalyticsPresentationTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/AnalyticsPresentationTests.swiftdeps",
+    "diagnostics": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/AnalyticsPresentationTests.dia"
+  },
+  "/Users/teo/src/tempo/Tests/TempoAppTests/CSVExportTests.swift": {
+    "dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CSVExportTests.d",
+    "object": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CSVExportTests.swift.o",
+    "swiftmodule": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CSVExportTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CSVExportTests.swiftdeps",
+    "diagnostics": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CSVExportTests.dia"
+  },
+  "/Users/teo/src/tempo/Tests/TempoAppTests/CheckInCompletionTests.swift": {
+    "dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInCompletionTests.d",
+    "object": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInCompletionTests.swift.o",
+    "swiftmodule": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInCompletionTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInCompletionTests.swiftdeps",
+    "diagnostics": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInCompletionTests.dia"
+  },
+  "/Users/teo/src/tempo/Tests/TempoAppTests/CheckInProjectSelectionTests.swift": {
+    "dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInProjectSelectionTests.d",
+    "object": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInProjectSelectionTests.swift.o",
+    "swiftmodule": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInProjectSelectionTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInProjectSelectionTests.swiftdeps",
+    "diagnostics": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInProjectSelectionTests.dia"
+  },
+  "/Users/teo/src/tempo/Tests/TempoAppTests/CheckInPromptPresentationTests.swift": {
+    "dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInPromptPresentationTests.d",
+    "object": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInPromptPresentationTests.swift.o",
+    "swiftmodule": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInPromptPresentationTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInPromptPresentationTests.swiftdeps",
+    "diagnostics": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/CheckInPromptPresentationTests.dia"
+  },
+  "/Users/teo/src/tempo/Tests/TempoAppTests/LaunchAtLoginTests.swift": {
+    "dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/LaunchAtLoginTests.d",
+    "object": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/LaunchAtLoginTests.swift.o",
+    "swiftmodule": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/LaunchAtLoginTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/LaunchAtLoginTests.swiftdeps",
+    "diagnostics": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/LaunchAtLoginTests.dia"
+  },
+  "/Users/teo/src/tempo/Tests/TempoAppTests/PersistenceModelTests.swift": {
+    "dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/PersistenceModelTests.d",
+    "object": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/PersistenceModelTests.swift.o",
+    "swiftmodule": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/PersistenceModelTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/PersistenceModelTests.swiftdeps",
+    "diagnostics": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/PersistenceModelTests.dia"
+  },
+  "/Users/teo/src/tempo/Tests/TempoAppTests/PollingSchedulerTests.swift": {
+    "dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/PollingSchedulerTests.d",
+    "object": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/PollingSchedulerTests.swift.o",
+    "swiftmodule": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/PollingSchedulerTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/PollingSchedulerTests.swiftdeps",
+    "diagnostics": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/PollingSchedulerTests.dia"
+  },
+  "/Users/teo/src/tempo/Tests/TempoAppTests/TempoAppBootstrapTests.swift": {
+    "dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/TempoAppBootstrapTests.d",
+    "object": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/TempoAppBootstrapTests.swift.o",
+    "swiftmodule": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/TempoAppBootstrapTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/TempoAppBootstrapTests.swiftdeps",
+    "diagnostics": "/Users/teo/src/tempo/.build/arm64-apple-macosx/debug/TempoAppTests.build/TempoAppBootstrapTests.dia"
+  }
+}

@@ -1,14 +1,8 @@
 import SwiftUI
 
 struct CheckInPromptView: View {
-    enum PresentationStyle {
-        case detached
-        case inline
-    }
-
     let appModel: TempoAppModel?
     let state: CheckInPromptState
-    var presentationStyle: PresentationStyle = .detached
 
     private var isIdleResolution: Bool {
         state.promptTitle == "Resolve idle time"
@@ -17,17 +11,17 @@ struct CheckInPromptView: View {
     var body: some View {
         CheckInPromptContent(appModel: appModel, state: state)
             .frame(
-                minWidth: isIdleResolution ? 580 : 336,
-                minHeight: isIdleResolution ? 500 : 284
+                minWidth: isIdleResolution ? 368 : 336,
+                minHeight: isIdleResolution ? 380 : 284
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(isIdleResolution ? 24 : 12)
+            .padding(12)
             .background(cardBackground)
     }
 
     private var cardBackground: some View {
         ZStack(alignment: .topTrailing) {
-            if !isIdleResolution && presentationStyle == .detached {
+            if !isIdleResolution {
                 PopoverArrow()
                     .fill(Color.white.opacity(0.96))
                     .frame(width: 22, height: 12)
@@ -36,7 +30,7 @@ struct CheckInPromptView: View {
             }
 
             RoundedRectangle(cornerRadius: isIdleResolution ? 28 : 14, style: .continuous)
-                .fill(isIdleResolution ? AnyShapeStyle(.ultraThickMaterial) : AnyShapeStyle(Color.white.opacity(0.96)))
+                .fill(AnyShapeStyle(Color.white.opacity(0.96)))
                 .overlay(
                     RoundedRectangle(cornerRadius: isIdleResolution ? 28 : 14, style: .continuous)
                         .strokeBorder(Color.black.opacity(isIdleResolution ? 0.08 : 0.10), lineWidth: 1)

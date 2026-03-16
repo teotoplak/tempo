@@ -40,9 +40,21 @@ struct AnalyticsProjectSummary: Equatable, Identifiable {
     }
 }
 
+struct AnalyticsTimelineInterval: Equatable, Identifiable {
+    let startDate: Date
+    let endDate: Date
+    let projectName: String
+
+    var id: String {
+        "\(projectName)-\(startDate.timeIntervalSinceReferenceDate)-\(endDate.timeIntervalSinceReferenceDate)"
+    }
+}
+
 struct AnalyticsSummarySnapshot: Equatable {
     let period: AnalyticsPeriod
     let totalDuration: TimeInterval
     let projectSummaries: [AnalyticsProjectSummary]
     let topProjectName: String?
+    let firstEntryStartDate: Date?
+    let timelineIntervals: [AnalyticsTimelineInterval]
 }

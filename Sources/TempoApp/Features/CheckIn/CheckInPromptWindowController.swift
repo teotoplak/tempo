@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class CheckInPromptWindowController {
     private static let standardPromptSize = CGSize(width: 360, height: 320)
-    private static let idleResolutionPromptSize = CGSize(width: 620, height: 560)
+    private static let idleResolutionPromptSize = CGSize(width: 392, height: 420)
 
     private(set) var backdropWindow: NSWindow?
     private(set) var promptWindow: NSWindow?
@@ -36,23 +36,13 @@ final class CheckInPromptWindowController {
     func show(using state: CheckInPromptState) {
         let screenFrame = NSScreen.main?.frame ?? .zero
         let visibleFrame = NSScreen.main?.visibleFrame ?? screenFrame
-        let shouldShowBackdrop = Self.wantsBackdrop(for: state)
         let anchorRect = currentMenuBarAnchorRect(in: visibleFrame)
-
-        if shouldShowBackdrop, backdropWindow == nil {
-            backdropWindow = Self.makeBackdropWindow(screenFrame: screenFrame)
-        }
 
         if promptWindow == nil {
             promptWindow = Self.makePromptWindow(screenFrame: visibleFrame, state: state)
         }
 
-        if shouldShowBackdrop {
-            backdropWindow?.setFrame(screenFrame, display: false)
-            backdropWindow?.orderFrontRegardless()
-        } else {
-            backdropWindow?.orderOut(nil)
-        }
+        backdropWindow?.orderOut(nil)
 
         promptWindow?.setFrame(Self.promptFrame(in: visibleFrame, state: state, anchorRect: anchorRect), display: false)
         promptWindow?.contentViewController = NSHostingController(
@@ -78,23 +68,33 @@ final class CheckInPromptWindowController {
     }
 
     private func currentMenuBarAnchorRect(in visibleFrame: CGRect) -> CGRect? {
+        candidateMenuBarWindows(in: visibleFrame)
+            .first?
+            .frame
+    }
+
+    private func candidateMenuBarWindows(in visibleFrame: CGRect) -> [NSWindow] {
         NSApplication.shared.windows
             .filter { window in
                 window !== promptWindow &&
                 window !== backdropWindow &&
                 window.isVisible &&
                 !window.frame.isEmpty &&
-                window.frame.maxY >= visibleFrame.maxY - 120
+                window.frame.maxY >= visibleFrame.maxY - 120 &&
+                window.frame.width <= 420 &&
+                window.frame.height <= 520
             }
             .sorted { lhs, rhs in
-                if lhs.frame.maxY == rhs.frame.maxY {
-                    return lhs.frame.width < rhs.frame.width
+                if lhs.frame.maxX == rhs.frame.maxX {
+                    if lhs.frame.maxY == rhs.frame.maxY {
+                        return lhs.frame.width > rhs.frame.width
+                    }
+
+                    return lhs.frame.maxY > rhs.frame.maxY
                 }
 
-                return lhs.frame.maxY > rhs.frame.maxY
+                return lhs.frame.maxX > rhs.frame.maxX
             }
-            .first?
-            .frame
     }
 
     static func makeBackdropWindow(screenFrame: CGRect) -> NSWindow {
@@ -121,7 +121,7 @@ final class CheckInPromptWindowController {
             backing: .buffered,
             defer: false
         )
-        panel.level = .floating
+        panel.level = .statusBar
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.backgroundColor = .clear
@@ -133,35 +133,9 @@ final class CheckInPromptWindowController {
 
     static func promptFrame(in screenFrame: CGRect, state: CheckInPromptState = .hidden, anchorRect: CGRect? = nil) -> CGRect {
         let size = promptSize(for: state)
-        if wantsBackdrop(for: state) {
-            return CGRect(
-                x: screenFrame.midX - (size.width / 2),
-                y: screenFrame.midY - (size.height / 2),
-                width: size.width,
-                height: size.height
-            )
-        }
-
-        if let anchorRect {
-            let gap: CGFloat = 8
-            let minX = screenFrame.minX + 12
-            let maxX = screenFrame.maxX - size.width - 12
-            let anchoredX = max(minX, min(anchorRect.midX - (size.width / 2), maxX))
-            let anchoredY = anchorRect.minY - size.height - gap
-
-            return CGRect(
-                x: anchoredX,
-                y: max(screenFrame.minY + 12, anchoredY),
-                width: size.width,
-                height: size.height
-            )
-        }
-
-        let topInset: CGFloat = 10
-        let trailingInset: CGFloat = 20
         return CGRect(
-            x: screenFrame.maxX - size.width - trailingInset,
-            y: screenFrame.maxY - size.height - topInset,
+            x: screenFrame.midX - (size.width / 2),
+            y: screenFrame.midY - (size.height / 2),
             width: size.width,
             height: size.height
         )
@@ -172,7 +146,7 @@ final class CheckInPromptWindowController {
     }
 
     static func wantsBackdrop(for state: CheckInPromptState) -> Bool {
-        state.promptTitle == "Resolve idle time"
+        false
     }
 }
 

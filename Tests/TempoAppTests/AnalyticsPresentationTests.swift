@@ -25,6 +25,14 @@ final class AnalyticsPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("entryCount"))
     }
 
+    func testAnalyticsViewContainsDailyTimelineSection() throws {
+        let source = try sourceFile("Sources/TempoApp/Features/Analytics/AnalyticsView.swift")
+
+        XCTAssertTrue(source.contains("Started working"))
+        XCTAssertTrue(source.contains("Daily timeline"))
+        XCTAssertTrue(source.contains("No recorded intervals today"))
+    }
+
     func testAnalyticsViewDefinesEmptyStateCopy() throws {
         let source = try sourceFile("Sources/TempoApp/Features/Analytics/AnalyticsView.swift")
 

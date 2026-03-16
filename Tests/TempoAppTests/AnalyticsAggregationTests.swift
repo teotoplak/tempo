@@ -31,6 +31,11 @@ final class AnalyticsAggregationTests: XCTestCase {
         XCTAssertEqual(summary.projectSummaries[0].entryCount, 2)
         XCTAssertEqual(summary.projectSummaries[1].totalDuration, 2_700, accuracy: 0.001)
         XCTAssertEqual(summary.topProjectName, "Client Work")
+        XCTAssertEqual(summary.firstEntryStartDate, date(2026, 3, 16, 9, 0))
+        XCTAssertEqual(summary.timelineIntervals.count, 3)
+        XCTAssertEqual(summary.timelineIntervals[0].projectName, "Client Work")
+        XCTAssertEqual(summary.timelineIntervals[0].startDate, date(2026, 3, 16, 9, 0))
+        XCTAssertEqual(summary.timelineIntervals[0].endDate, date(2026, 3, 16, 10, 0))
     }
 
     @MainActor
@@ -87,6 +92,32 @@ final class AnalyticsAggregationTests: XCTestCase {
         XCTAssertEqual(summary.projectSummaries[0].percentageOfTotal, 0.5, accuracy: 0.0001)
         XCTAssertEqual(summary.projectSummaries[1].percentageOfTotal, 0.25, accuracy: 0.0001)
         XCTAssertEqual(summary.projectSummaries[2].percentageOfTotal, 0.25, accuracy: 0.0001)
+        XCTAssertNil(summary.firstEntryStartDate)
+        XCTAssertTrue(summary.timelineIntervals.isEmpty)
+    }
+
+    @MainActor
+    func testDailySummaryClipsIntervalsToSelectedDay() throws {
+        let now = date(2026, 3, 16, 8, 0)
+        let container = TempoModelContainer.inMemory()
+        let context = ModelContext(container)
+        let store = AnalyticsStore(modelContext: context)
+        let project = ProjectRecord(name: "Overnight", sortOrder: 0)
+        context.insert(project)
+
+        context.insert(entry(project: project, start: date(2026, 3, 15, 23, 30), end: date(2026, 3, 16, 1, 0)))
+        context.insert(entry(project: project, start: date(2026, 3, 16, 22, 30), end: date(2026, 3, 17, 0, 30)))
+        try context.save()
+
+        let summary = store.summary(range: .day, referenceDate: now, calendar: testCalendar)
+
+        XCTAssertEqual(summary.totalDuration, 9_000, accuracy: 0.001)
+        XCTAssertEqual(summary.firstEntryStartDate, date(2026, 3, 16, 0, 0))
+        XCTAssertEqual(summary.timelineIntervals.count, 2)
+        XCTAssertEqual(summary.timelineIntervals[0].startDate, date(2026, 3, 16, 0, 0))
+        XCTAssertEqual(summary.timelineIntervals[0].endDate, date(2026, 3, 16, 1, 0))
+        XCTAssertEqual(summary.timelineIntervals[1].startDate, date(2026, 3, 16, 22, 30))
+        XCTAssertEqual(summary.timelineIntervals[1].endDate, date(2026, 3, 17, 0, 0))
     }
 
     @MainActor
@@ -112,6 +143,8 @@ final class AnalyticsAggregationTests: XCTestCase {
         XCTAssertEqual(appModel.analyticsTotalDuration, 3_600, accuracy: 0.001)
         XCTAssertEqual(appModel.analyticsProjectSummaries.count, 1)
         XCTAssertEqual(appModel.analyticsTopProjectName, "Client Work")
+        XCTAssertNil(appModel.analyticsFirstEntryStartDate)
+        XCTAssertTrue(appModel.analyticsTimelineIntervals.isEmpty)
     }
 
     private func entry(project: ProjectRecord?, start: Date, end: Date) -> TimeEntryRecord {

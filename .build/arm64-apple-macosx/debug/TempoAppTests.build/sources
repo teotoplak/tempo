@@ -1,0 +1,10 @@
+/Users/teo/src/tempo/Tests/TempoAppTests/AnalyticsAggregationTests.swift
+/Users/teo/src/tempo/Tests/TempoAppTests/AnalyticsPresentationTests.swift
+/Users/teo/src/tempo/Tests/TempoAppTests/CSVExportTests.swift
+/Users/teo/src/tempo/Tests/TempoAppTests/CheckInCompletionTests.swift
+/Users/teo/src/tempo/Tests/TempoAppTests/CheckInProjectSelectionTests.swift
+/Users/teo/src/tempo/Tests/TempoAppTests/CheckInPromptPresentationTests.swift
+/Users/teo/src/tempo/Tests/TempoAppTests/LaunchAtLoginTests.swift
+/Users/teo/src/tempo/Tests/TempoAppTests/PersistenceModelTests.swift
+/Users/teo/src/tempo/Tests/TempoAppTests/PollingSchedulerTests.swift
+/Users/teo/src/tempo/Tests/TempoAppTests/TempoAppBootstrapTests.swift
