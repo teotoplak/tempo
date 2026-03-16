@@ -50,23 +50,6 @@ final class CheckInCompletionTests: XCTestCase {
     }
 
     @MainActor
-    func testDelayPromptDoesNotCreateCheckIn() throws {
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let appModel = TempoAppModel(
-            modelContainer: TempoModelContainer.inMemory(),
-            clock: FixedCompletionClock(now: now)
-        )
-        appModel.schedulerStateRecord.nextCheckInAt = now
-        appModel.isPromptOverdue = true
-
-        try appModel.delayPrompt(byMinutes: 15)
-
-        let checkIns = try appModel.modelContext.fetch(FetchDescriptor<CheckInRecord>())
-        XCTAssertTrue(checkIns.isEmpty)
-        XCTAssertEqual(appModel.schedulerStateRecord.delayedUntilAt, now.addingTimeInterval(15 * 60))
-    }
-
-    @MainActor
     func testSelectingProjectAfterIdleReturnStoresOnlyTheReturningProjectCheckIn() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let appModel = TempoAppModel(

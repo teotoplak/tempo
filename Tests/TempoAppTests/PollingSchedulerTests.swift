@@ -23,8 +23,7 @@ final class PollingSchedulerTests: XCTestCase {
         let settings = AppSettingsRecord()
         let state = SchedulerStateRecord(
             lastCheckInAt: now.addingTimeInterval(-15 * 60),
-            nextCheckInAt: nextCheckInAt,
-            lastAppLaunchAt: now.addingTimeInterval(-60)
+            nextCheckInAt: nextCheckInAt
         )
 
         let result = scheduler.updateState(state, settings: settings, eventDate: now)
@@ -41,15 +40,14 @@ final class PollingSchedulerTests: XCTestCase {
         let settings = AppSettingsRecord()
         let state = SchedulerStateRecord(
             lastCheckInAt: now.addingTimeInterval(-35 * 60),
-            nextCheckInAt: overdueCheckInAt,
-            lastAppLaunchAt: now.addingTimeInterval(-90)
+            nextCheckInAt: overdueCheckInAt
         )
 
         let result = scheduler.updateState(state, settings: settings, eventDate: now)
 
         XCTAssertEqual(result.nextCheckInAt, overdueCheckInAt)
         XCTAssertTrue(result.isPromptOverdue)
-        XCTAssertEqual(result.accountableElapsedInterval, 25 * 60)
+        XCTAssertEqual(result.accountableElapsedInterval, 35 * 60)
     }
 
     func testCompleteCheckInSchedulesFromCompletionDate() {
@@ -58,8 +56,7 @@ final class PollingSchedulerTests: XCTestCase {
         let settings = AppSettingsRecord()
         let state = SchedulerStateRecord(
             lastCheckInAt: completionDate.addingTimeInterval(-45 * 60),
-            nextCheckInAt: completionDate.addingTimeInterval(-5 * 60),
-            lastAppLaunchAt: completionDate.addingTimeInterval(-10)
+            nextCheckInAt: completionDate.addingTimeInterval(-5 * 60)
         )
 
         let result = scheduler.completeCheckIn(
@@ -74,62 +71,13 @@ final class PollingSchedulerTests: XCTestCase {
         XCTAssertEqual(result.accountableElapsedInterval, 25 * 60)
     }
 
-    func testDelayCheckInSchedulesFuturePrompt() {
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: now))
-        let settings = AppSettingsRecord()
-        let state = SchedulerStateRecord(
-            lastCheckInAt: now.addingTimeInterval(-25 * 60),
-            nextCheckInAt: now,
-            lastAppLaunchAt: now.addingTimeInterval(-60)
-        )
-
-        let result = scheduler.delayCheckIn(
-            state: state,
-            settings: settings,
-            delayMinutes: 15,
-            delayDate: now
-        )
-
-        XCTAssertEqual(result.nextCheckInAt, now.addingTimeInterval(15 * 60))
-        XCTAssertEqual(result.delayedUntilAt, now.addingTimeInterval(15 * 60))
-        XCTAssertEqual(result.delayedFromPromptAt, now)
-        XCTAssertTrue(result.snapshot.isPromptDelayed)
-        XCTAssertFalse(result.snapshot.isSilenced)
-    }
-
-    func testDelayedPromptBecomesDueAfterDelayExpires() {
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: now))
-        let settings = AppSettingsRecord()
-        let state = SchedulerStateRecord(
-            lastCheckInAt: now.addingTimeInterval(-25 * 60),
-            nextCheckInAt: now.addingTimeInterval(15 * 60),
-            lastAppLaunchAt: now,
-            delayedUntilAt: now.addingTimeInterval(15 * 60),
-            delayedFromPromptAt: now
-        )
-
-        let result = scheduler.updateState(
-            state,
-            settings: settings,
-            eventDate: now.addingTimeInterval(20 * 60)
-        )
-
-        XCTAssertTrue(result.isPromptOverdue)
-        XCTAssertFalse(result.snapshot.isPromptDelayed)
-        XCTAssertNil(result.delayedUntilAt)
-        XCTAssertEqual(result.accountableElapsedInterval, 25 * 60)
-    }
-
     func testSilenceUntilNextCutoffSuppressesPrompt() {
         let eventDate = Date(timeIntervalSince1970: 1_700_000_000)
         let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: eventDate))
         let settings = AppSettingsRecord()
         let state = SchedulerStateRecord(
             lastCheckInAt: eventDate.addingTimeInterval(-25 * 60),
-            nextCheckInAt: eventDate,
-            lastAppLaunchAt: eventDate.addingTimeInterval(-60)
+            nextCheckInAt: eventDate
         )
 
         let result = scheduler.silenceUntilEndOfDay(
@@ -154,8 +102,6 @@ final class PollingSchedulerTests: XCTestCase {
         let state = SchedulerStateRecord(
             lastCheckInAt: eventDate.addingTimeInterval(-25 * 60),
             nextCheckInAt: cutoff,
-            lastAppLaunchAt: eventDate,
-            silencedAt: eventDate,
             silenceEndsAt: cutoff
         )
 
@@ -178,8 +124,6 @@ final class PollingSchedulerTests: XCTestCase {
         let state = SchedulerStateRecord(
             lastCheckInAt: eventDate.addingTimeInterval(-25 * 60),
             nextCheckInAt: eventDate.addingTimeInterval(60 * 60),
-            lastAppLaunchAt: eventDate,
-            silencedAt: eventDate.addingTimeInterval(-10),
             silenceEndsAt: eventDate.addingTimeInterval(60 * 60)
         )
 
@@ -200,8 +144,7 @@ final class PollingSchedulerTests: XCTestCase {
         let settings = AppSettingsRecord()
         let state = SchedulerStateRecord(
             lastCheckInAt: now.addingTimeInterval(-(40 * 60)),
-            nextCheckInAt: now.addingTimeInterval(-(15 * 60)),
-            lastAppLaunchAt: now.addingTimeInterval(-(10 * 60))
+            nextCheckInAt: now.addingTimeInterval(-(15 * 60))
         )
 
         let result = scheduler.beginIdleInterval(
@@ -226,10 +169,6 @@ final class PollingSchedulerTests: XCTestCase {
         let state = SchedulerStateRecord(
             lastCheckInAt: now.addingTimeInterval(-(25 * 60)),
             nextCheckInAt: now.addingTimeInterval(5 * 60),
-            lastAppLaunchAt: now.addingTimeInterval(-(60)),
-            delayedUntilAt: now.addingTimeInterval(15 * 60),
-            delayedFromPromptAt: now,
-            silencedAt: now.addingTimeInterval(-(30)),
             silenceEndsAt: now.addingTimeInterval(60 * 60)
         )
 
@@ -242,9 +181,7 @@ final class PollingSchedulerTests: XCTestCase {
 
         XCTAssertTrue(result.snapshot.isIdlePending)
         XCTAssertEqual(result.pendingIdleReason, "screen-locked")
-        XCTAssertNil(result.delayedUntilAt)
         XCTAssertNil(result.silenceEndsAt)
-        XCTAssertFalse(result.snapshot.isPromptDelayed)
         XCTAssertFalse(result.snapshot.isSilenced)
     }
 
@@ -254,7 +191,6 @@ final class PollingSchedulerTests: XCTestCase {
         let settings = AppSettingsRecord()
         let state = SchedulerStateRecord(
             lastCheckInAt: now.addingTimeInterval(-(45 * 60)),
-            lastAppLaunchAt: now.addingTimeInterval(-(10 * 60)),
             idleBeganAt: now.addingTimeInterval(-(12 * 60)),
             idleDetectedAt: now.addingTimeInterval(-(10 * 60)),
             pendingIdleStartedAt: now.addingTimeInterval(-(12 * 60)),
@@ -277,40 +213,19 @@ final class PollingSchedulerTests: XCTestCase {
         XCTAssertEqual(result.idleResolvedAt, now)
     }
 
-    func testOverdueRelaunchClampsElapsedToLastLaunchAt() {
+    func testOverduePromptUsesLastCheckInAsReference() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: now), calendar: fixedSchedulerCalendar())
         let settings = AppSettingsRecord()
         let state = SchedulerStateRecord(
             lastCheckInAt: now.addingTimeInterval(-(4 * 60 * 60)),
-            nextCheckInAt: now.addingTimeInterval(-(2 * 60 * 60)),
-            lastAppLaunchAt: now.addingTimeInterval(-(40 * 60))
+            nextCheckInAt: now.addingTimeInterval(-(2 * 60 * 60))
         )
 
         let result = scheduler.updateState(state, settings: settings, eventDate: now)
 
         XCTAssertTrue(result.isPromptOverdue)
-        XCTAssertEqual(result.accountableElapsedInterval, 40 * 60)
-    }
-
-    func testDelayedPromptAfterRelaunchUsesLastLaunchAsReferenceStart() {
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let delayedUntilAt = now.addingTimeInterval(-(10 * 60))
-        let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: now), calendar: fixedSchedulerCalendar())
-        let settings = AppSettingsRecord()
-        let state = SchedulerStateRecord(
-            lastCheckInAt: now.addingTimeInterval(-(3 * 60 * 60)),
-            nextCheckInAt: delayedUntilAt,
-            lastAppLaunchAt: now.addingTimeInterval(-(35 * 60)),
-            delayedUntilAt: delayedUntilAt,
-            delayedFromPromptAt: now.addingTimeInterval(-(50 * 60))
-        )
-
-        let result = scheduler.updateState(state, settings: settings, eventDate: now)
-
-        XCTAssertTrue(result.isPromptOverdue)
-        XCTAssertFalse(result.snapshot.isPromptDelayed)
-        XCTAssertEqual(result.accountableElapsedInterval, 35 * 60)
+        XCTAssertEqual(result.accountableElapsedInterval, (2 * 60 * 60) + (25 * 60))
     }
 
     func testSilenceExpiredAcrossCutoffSchedulesFromWakeTime() {
@@ -331,8 +246,6 @@ final class PollingSchedulerTests: XCTestCase {
         let state = SchedulerStateRecord(
             lastCheckInAt: cutoff.addingTimeInterval(-(30 * 60)),
             nextCheckInAt: cutoff,
-            lastAppLaunchAt: cutoff.addingTimeInterval(-(5 * 60)),
-            silencedAt: cutoff.addingTimeInterval(-(2 * 60 * 60)),
             silenceEndsAt: cutoff
         )
 

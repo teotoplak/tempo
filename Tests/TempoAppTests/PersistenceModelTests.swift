@@ -11,7 +11,6 @@ final class PersistenceModelTests: XCTestCase {
         XCTAssertEqual(appModel.settings.pollingIntervalMinutes, 25)
         XCTAssertEqual(appModel.settings.idleThresholdMinutes, 5)
         XCTAssertEqual(appModel.settings.analyticsDayCutoffHour, 6)
-        XCTAssertEqual(appModel.settings.delayPresetMinutes, [15, 30])
     }
 
     @MainActor

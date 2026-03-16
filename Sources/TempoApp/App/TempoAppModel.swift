@@ -76,8 +76,6 @@ final class TempoAppModel {
     var nextCheckInAt: Date?
     var isPromptOverdue = false
     var accountableElapsedInterval: TimeInterval = 0
-    var isPromptDelayed = false
-    var delayedUntilAt: Date?
     var isSilenced = false
     var silenceEndsAt: Date?
     var isIdlePending = false
@@ -97,12 +95,19 @@ final class TempoAppModel {
     var analyticsTopProjectName: String?
     var analyticsFirstEntryStartDate: Date?
     var analyticsTimelineIntervals: [AnalyticsTimelineInterval] = []
+    var menuBarDayPeriod: AnalyticsPeriod
+    var menuBarDayTotalDuration: TimeInterval = 0
+    var menuBarDayProjectSummaries: [AnalyticsProjectSummary] = []
+    var menuBarDayFirstEntryStartDate: Date?
+    var menuBarDayTimelineIntervals: [AnalyticsTimelineInterval] = []
+    var menuBarDayCheckIns: [TimeAllocationCheckIn] = []
     var analyticsExportStatusMessage: String?
     var analyticsExportErrorMessage: String?
     var launchAtLoginEnabled = false
     var launchAtLoginErrorMessage: String?
     private var lastSavedPollingIntervalMinutes = 25
     private var isMenuBarWindowVisible = false
+    private var promptPresentedAt: Date?
 
     private let clock: any SchedulerClock
     private let calendar: Calendar
@@ -130,6 +135,11 @@ final class TempoAppModel {
         self.launchAtLoginController = launchAtLoginController
         self.scheduler = PollingScheduler(clock: clock, calendar: calendar)
         self.analyticsPeriod = AnalyticsPeriod(
+            startDate: clock.now,
+            endDate: clock.now,
+            label: clock.now.formatted(date: .abbreviated, time: .omitted)
+        )
+        self.menuBarDayPeriod = AnalyticsPeriod(
             startDate: clock.now,
             endDate: clock.now,
             label: clock.now.formatted(date: .abbreviated, time: .omitted)
@@ -183,6 +193,7 @@ final class TempoAppModel {
         syncLaunchAtLoginPreferenceFromSystem()
         recoverSchedulerState(eventDate: clock.now)
         refreshAnalytics(referenceDate: clock.now)
+        presentLaunchCheckInPrompt()
     }
 
     func syncLaunchAtLoginPreferenceFromSystem() {
@@ -210,11 +221,11 @@ final class TempoAppModel {
         }
     }
 
-    func handleSceneActivation() {
+    func handleSceneActivation(activityDate: Date? = nil) {
         let now = clock.now
-        detectInactivityIfNeeded(activityDate: currentUserActivityDate(referenceDate: now))
+        let resolvedActivityDate = activityDate ?? currentUserActivityDate(referenceDate: now)
 
-        guard !isIdlePending else {
+        if resolvePendingIdleIfActivityResumed(activityDate: resolvedActivityDate, referenceDate: now) {
             return
         }
 
@@ -227,14 +238,7 @@ final class TempoAppModel {
             return
         }
 
-        let now = clock.now
-        detectInactivityIfNeeded(activityDate: currentUserActivityDate(referenceDate: now))
-
-        guard !isIdlePending else {
-            return
-        }
-
-        recoverSchedulerState(eventDate: now)
+        recoverSchedulerState(eventDate: clock.now)
     }
 
     func quit() {
@@ -253,6 +257,15 @@ final class TempoAppModel {
         }
 
         isMenuBarWindowVisible = isVisible
+
+        if isVisible {
+            let now = clock.now
+            let activityDate = currentUserActivityDate(referenceDate: now)
+            if resolvePendingIdleIfActivityResumed(activityDate: activityDate, referenceDate: now) {
+                return
+            }
+        }
+
         checkInPromptWindowController?.update(with: detachedCheckInPromptState)
     }
 
@@ -260,12 +273,7 @@ final class TempoAppModel {
         ensureIdleSelectionDefaults()
         let shouldPresent = isPromptOverdue || shouldPresentPendingIdlePrompt
         let promptTitle = "What are you currently doing"
-        let supportingSubtitle = shouldPresentPendingIdlePrompt
-            ? Self.idleSupportingSubtitle(duration: pendingIdleDuration, reason: pendingIdleReasonLabel)
-            : Self.supportingSubtitle(
-                elapsedDuration: accountableElapsedInterval,
-                isOverdue: isPromptOverdue
-            )
+        let supportingSubtitle = promptSupportingSubtitle(at: clock.now)
         checkInPromptState = CheckInPromptState(
             isPresented: shouldPresent,
             elapsedDuration: accountableElapsedInterval,
@@ -278,6 +286,13 @@ final class TempoAppModel {
 
     func presentCheckInPromptIfNeeded() {
         refreshCheckInPromptState()
+        if checkInPromptState.isPresented,
+           !isMenuBarWindowVisible,
+           !isIdlePending,
+           promptPresentedAt == nil {
+            promptPresentedAt = clock.now
+            refreshCheckInPromptState()
+        }
         checkInPromptWindowController?.update(with: detachedCheckInPromptState)
     }
 
@@ -285,10 +300,6 @@ final class TempoAppModel {
         checkInPromptState.isPresented = false
         checkInPromptWindowController?.hide()
         schedulePromptTimerIfNeeded()
-    }
-
-    var delayPresetMinutes: [Int] {
-        settings.delayPresetMinutes
     }
 
     var currentProjectContextLabel: String {
@@ -309,10 +320,6 @@ final class TempoAppModel {
             return "Silenced until \(Self.formattedClockTime(silenceEndsAt))"
         }
 
-        if isPromptDelayed, let delayedUntilAt {
-            return "Delayed until \(Self.formattedClockTime(delayedUntilAt))"
-        }
-
         if isPromptOverdue {
             return "Check-in overdue"
         }
@@ -330,16 +337,8 @@ final class TempoAppModel {
             return "Resumes at daily cutoff (\(Self.formattedClockTime(silenceEndsAt)))"
         }
 
-        if isPromptDelayed, let delayedUntilAt {
-            let remaining = max(delayedUntilAt.timeIntervalSince(date), 0)
-            return "Prompt hidden for \(Self.formattedCompactDuration(remaining))"
-        }
-
         if isPromptOverdue {
-            return Self.supportingSubtitle(
-                elapsedDuration: accountableElapsedInterval,
-                isOverdue: true
-            )
+            return promptSupportingSubtitle(at: date)
         }
 
         guard let nextCheckInAt else {
@@ -529,22 +528,6 @@ final class TempoAppModel {
         try selectProjectForPrompt(project)
     }
 
-    func delayPrompt(byMinutes minutes: Int) throws {
-        let result = scheduler.delayCheckIn(
-            state: schedulerStateRecord,
-            settings: settings,
-            delayMinutes: minutes,
-            delayDate: clock.now
-        )
-        schedulerStateStore.apply(result, to: schedulerStateRecord)
-        try schedulerStateStore.save(schedulerStateRecord)
-
-        apply(snapshot: result.snapshot)
-        promptSearchText = ""
-        refreshCheckInPromptState()
-        dismissCheckInPrompt()
-    }
-
     func silenceForRestOfDay() throws {
         try persistIdleCheckIn(
             at: clock.now,
@@ -580,17 +563,16 @@ final class TempoAppModel {
 
     func checkInNow() {
         if isIdlePending {
-            schedulerStateRecord.idleResolvedAt = clock.now
-            refreshCheckInPromptState()
-            presentCheckInPromptIfNeeded()
+            handleIdleReturn()
             return
         }
 
         let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
-        let promptReference = schedulerStateRecord.delayedFromPromptAt ?? schedulerStateRecord.nextCheckInAt ?? clock.now
+        let promptReference = schedulerStateRecord.nextCheckInAt ?? clock.now
         let referenceStart = schedulerStateRecord.lastCheckInAt ?? promptReference.addingTimeInterval(-pollingInterval)
         accountableElapsedInterval = max(clock.now.timeIntervalSince(referenceStart), pollingInterval)
         isPromptOverdue = true
+        promptPresentedAt = nil
         refreshCheckInPromptState()
         presentCheckInPromptIfNeeded()
     }
@@ -636,45 +618,6 @@ final class TempoAppModel {
         refreshAnalytics(referenceDate: clock.now)
     }
 
-    func detectInactivityIfNeeded(activityDate: Date) {
-        guard !isIdlePending else {
-            return
-        }
-
-        let threshold = TimeInterval(settings.idleThresholdMinutes * 60)
-        let now = clock.now
-        guard now.timeIntervalSince(activityDate) >= threshold else {
-            return
-        }
-
-        try? persistIdleCheckIn(
-            at: activityDate,
-            idleKind: .automaticThreshold,
-            source: "inactivity"
-        )
-
-        let result = scheduler.beginIdleInterval(
-            state: schedulerStateRecord,
-            settings: settings,
-            eventDate: now,
-            reason: "inactivity"
-        )
-        var adjustedResult = result
-        adjustedResult.snapshot.accountableWorkEndAt = activityDate
-        adjustedResult.snapshot.pendingIdleStartedAt = activityDate
-        adjustedResult.accountableWorkEndAt = activityDate
-        adjustedResult.idleBeganAt = activityDate
-        adjustedResult.pendingIdleStartedAt = activityDate
-
-        schedulerStateStore.apply(adjustedResult, to: schedulerStateRecord)
-        try? schedulerStateStore.save(schedulerStateRecord)
-
-        apply(snapshot: adjustedResult.snapshot)
-        promptSearchText = ""
-        refreshCheckInPromptState()
-        dismissCheckInPrompt()
-    }
-
     func handleScreenLock() {
         try? persistIdleCheckIn(
             at: clock.now,
@@ -710,6 +653,34 @@ final class TempoAppModel {
         presentCheckInPromptIfNeeded()
     }
 
+    @discardableResult
+    private func resolvePendingIdleIfActivityResumed(activityDate: Date, referenceDate: Date) -> Bool {
+        guard isIdlePending else {
+            return false
+        }
+
+        guard let pendingIdleBoundary = pendingIdleEndedAt ?? pendingIdleStartedAt else {
+            return false
+        }
+
+        guard activityDate > pendingIdleBoundary else {
+            return false
+        }
+
+        let result = scheduler.resolveReturnedIdleState(
+            state: schedulerStateRecord,
+            settings: settings,
+            eventDate: referenceDate
+        )
+        schedulerStateStore.apply(result, to: schedulerStateRecord)
+        try? schedulerStateStore.save(schedulerStateRecord)
+
+        apply(snapshot: result.snapshot)
+        refreshCheckInPromptState()
+        presentCheckInPromptIfNeeded()
+        return true
+    }
+
     func renameProject(_ project: ProjectRecord, to newName: String) throws {
         project.name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         try modelContext.save()
@@ -736,7 +707,7 @@ final class TempoAppModel {
             return
         }
 
-        if isIdlePending || isPromptDelayed || isSilenced {
+        if isIdlePending || isSilenced {
             recoverSchedulerState(eventDate: clock.now)
             return
         }
@@ -760,12 +731,28 @@ final class TempoAppModel {
             calendar: calendar,
             dayCutoffHour: settings.analyticsDayCutoffHour
         )
+        let daySnapshot = if selectedAnalyticsRange == .day {
+            snapshot
+        } else {
+            analyticsStore.summary(
+                range: .day,
+                referenceDate: referenceDate,
+                calendar: calendar,
+                dayCutoffHour: settings.analyticsDayCutoffHour
+            )
+        }
         analyticsPeriod = snapshot.period
         analyticsTotalDuration = snapshot.totalDuration
         analyticsProjectSummaries = snapshot.projectSummaries
         analyticsTopProjectName = snapshot.topProjectName
         analyticsFirstEntryStartDate = snapshot.firstEntryStartDate
         analyticsTimelineIntervals = snapshot.timelineIntervals
+        menuBarDayPeriod = daySnapshot.period
+        menuBarDayTotalDuration = daySnapshot.totalDuration
+        menuBarDayProjectSummaries = daySnapshot.projectSummaries
+        menuBarDayFirstEntryStartDate = daySnapshot.firstEntryStartDate
+        menuBarDayTimelineIntervals = daySnapshot.timelineIntervals
+        menuBarDayCheckIns = daySnapshot.checkIns
     }
 
     func exportAnalyticsCSV() {
@@ -874,6 +861,7 @@ final class TempoAppModel {
         try schedulerStateStore.save(schedulerStateRecord)
 
         apply(snapshot: completionResult.snapshot)
+        promptPresentedAt = nil
         selectedPromptProjectID = nil
         idleSplitSecondProjectID = nil
         idleSplitFirstDurationMinutes = 1
@@ -1024,8 +1012,6 @@ final class TempoAppModel {
         nextCheckInAt = snapshot.nextCheckInAt
         isPromptOverdue = snapshot.isPromptOverdue
         accountableElapsedInterval = snapshot.accountableElapsedInterval
-        isPromptDelayed = snapshot.isPromptDelayed
-        delayedUntilAt = snapshot.delayedUntilAt
         isSilenced = snapshot.isSilenced
         silenceEndsAt = snapshot.silenceEndsAt
         isIdlePending = snapshot.isIdlePending
@@ -1033,6 +1019,9 @@ final class TempoAppModel {
         pendingIdleEndedAt = snapshot.pendingIdleEndedAt
         pendingIdleReason = snapshot.pendingIdleReason
         pendingIdleDuration = max((snapshot.pendingIdleEndedAt ?? snapshot.pendingIdleStartedAt ?? clock.now).timeIntervalSince(snapshot.pendingIdleStartedAt ?? clock.now), 0)
+        if !snapshot.isPromptOverdue {
+            promptPresentedAt = nil
+        }
         if !snapshot.isIdlePending {
             selectedPromptProjectID = nil
             idleSplitSecondProjectID = nil
@@ -1078,26 +1067,112 @@ final class TempoAppModel {
     private func handleScheduledPromptTimerFired() {
         scheduledPromptTimer?.invalidate()
         scheduledPromptTimer = nil
+        if handlePromptIdleThresholdReachedIfNeeded(referenceDate: clock.now) {
+            return
+        }
         recoverSchedulerState(eventDate: clock.now)
         presentCheckInPromptIfNeeded()
     }
 
     func nextRuntimeUpdateAt(referenceDate: Date) -> Date? {
-        if shouldPresentPendingIdlePrompt || isPromptOverdue {
+        if shouldPresentPendingIdlePrompt {
             return nil
         }
 
-        let candidates = [nextCheckInAt, delayedUntilAt, silenceEndsAt].compactMap { $0 }
+        if let promptIdleMarkAt, isPromptOverdue {
+            return promptIdleMarkAt
+        }
+
+        let candidates = [nextCheckInAt, silenceEndsAt].compactMap { $0 }
         return candidates.filter { $0 > referenceDate }.min()
     }
 
     private var pendingIdleReasonLabel: String {
         switch pendingIdleReason {
+        case "snoozed":
+            return "Snoozed"
         case "screen-locked":
             return "Screen locked"
         default:
             return "Inactive"
         }
+    }
+
+    private var promptIdleMarkAt: Date? {
+        guard isPromptOverdue, !isIdlePending, let promptPresentedAt else {
+            return nil
+        }
+
+        return promptPresentedAt.addingTimeInterval(TimeInterval(settings.idleThresholdMinutes * 60))
+    }
+
+    func promptSupportingSubtitle(at date: Date) -> String {
+        if shouldPresentPendingIdlePrompt {
+            return Self.idleSupportingSubtitle(duration: pendingIdleDuration, reason: pendingIdleReasonLabel)
+        }
+
+        let elapsed = Self.formattedElapsedText(for: accountableElapsedInterval)
+        guard isPromptOverdue else {
+            return elapsed
+        }
+
+        guard let promptIdleMarkAt else {
+            return "\(elapsed) · awaiting response"
+        }
+
+        let remaining = max(promptIdleMarkAt.timeIntervalSince(date), 0)
+        if remaining <= 0 {
+            return "\(elapsed) · marking idle"
+        }
+
+        return "\(elapsed) · idle in \(Self.formattedCompactDuration(remaining))"
+    }
+
+    private func presentLaunchCheckInPrompt() {
+        guard !isSilenced, !isIdlePending else {
+            return
+        }
+
+        checkInNow()
+    }
+
+    @discardableResult
+    private func handlePromptIdleThresholdReachedIfNeeded(referenceDate: Date) -> Bool {
+        guard let promptIdleMarkAt, referenceDate >= promptIdleMarkAt else {
+            return false
+        }
+
+        try? persistIdleCheckIn(
+            at: promptIdleMarkAt,
+            idleKind: .snoozed,
+            source: "snoozed"
+        )
+
+        let result = scheduler.beginIdleInterval(
+            state: schedulerStateRecord,
+            settings: settings,
+            eventDate: promptIdleMarkAt,
+            reason: "snoozed"
+        )
+        var adjustedResult = result
+        adjustedResult.snapshot.accountableWorkEndAt = promptIdleMarkAt
+        adjustedResult.snapshot.pendingIdleStartedAt = promptIdleMarkAt
+        adjustedResult.snapshot.pendingIdleEndedAt = referenceDate
+        adjustedResult.accountableWorkEndAt = promptIdleMarkAt
+        adjustedResult.idleBeganAt = promptIdleMarkAt
+        adjustedResult.idleResolvedAt = referenceDate
+        adjustedResult.pendingIdleStartedAt = promptIdleMarkAt
+        adjustedResult.pendingIdleEndedAt = referenceDate
+
+        schedulerStateStore.apply(adjustedResult, to: schedulerStateRecord)
+        try? schedulerStateStore.save(schedulerStateRecord)
+
+        apply(snapshot: adjustedResult.snapshot)
+        promptSearchText = ""
+        refreshCheckInPromptState()
+        presentCheckInPromptIfNeeded()
+        refreshAnalytics(referenceDate: referenceDate)
+        return true
     }
 
     private func currentUserActivityDate(referenceDate: Date) -> Date {

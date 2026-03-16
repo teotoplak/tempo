@@ -18,19 +18,27 @@ struct CheckInPromptView: View {
     private var cardBackground: some View {
         ZStack(alignment: .topTrailing) {
             PopoverArrow()
-                .fill(Color.white.opacity(0.96))
+                .fill(cardFill)
                 .frame(width: 22, height: 12)
                 .offset(x: -72, y: -6)
                 .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
 
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(AnyShapeStyle(Color.white.opacity(0.96)))
+                .fill(AnyShapeStyle(cardFill))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.10), lineWidth: 1)
+                        .strokeBorder(borderColor, lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
         }
+    }
+
+    private var cardFill: Color {
+        Color(nsColor: .windowBackgroundColor)
+    }
+
+    private var borderColor: Color {
+        Color(nsColor: .separatorColor).opacity(0.55)
     }
 }
 

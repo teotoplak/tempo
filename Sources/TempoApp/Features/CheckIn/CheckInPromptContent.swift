@@ -48,7 +48,7 @@ struct CheckInPromptContent: View {
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(.secondary)
                             .frame(width: 18, height: 18)
-                            .background(Color.black.opacity(0.06), in: Circle())
+                            .background(controlBackground, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .help("Select an existing project or create one from what you type.")
@@ -63,10 +63,12 @@ struct CheckInPromptContent: View {
                     .padding(.horizontal, 4)
                 }
 
-                Text(state.supportingSubtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(promptSupportingSubtitle(at: context.date))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                }
 
                 if let appModel {
                     standardPromptFooter(appModel: appModel)
@@ -81,7 +83,7 @@ struct CheckInPromptContent: View {
     private var compactProjectListSection: some View {
         if appModel?.filteredPromptProjects.isEmpty ?? true {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.black.opacity(0.04))
+                .fill(controlBackground)
                 .frame(maxWidth: .infinity, minHeight: 72)
                 .overlay {
                     Text("No matching projects")
@@ -97,7 +99,7 @@ struct CheckInPromptContent: View {
                 compact: true
             )
             .padding(.top, 2)
-            .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(controlBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 
@@ -110,21 +112,13 @@ struct CheckInPromptContent: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
                     .frame(width: 28, height: 28)
-                    .background(Color.black.opacity(0.05), in: Circle())
+                    .background(controlBackground, in: Circle())
             }
             .buttonStyle(.plain)
 
             Spacer(minLength: 0)
 
             Menu {
-                ForEach(appModel.delayPresetMinutes, id: \.self) { preset in
-                    Button("Delay \(preset) min") {
-                        try? appModel.delayPrompt(byMinutes: preset)
-                    }
-                }
-
-                Divider()
-
                 Button("Done for day") {
                     try? appModel.silenceForRestOfDay()
                 }
@@ -133,11 +127,15 @@ struct CheckInPromptContent: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.primary)
                     .frame(width: 28, height: 28)
-                    .background(Color.black.opacity(0.05), in: Circle())
+                    .background(controlBackground, in: Circle())
             }
             .menuStyle(.borderlessButton)
         }
         .padding(.horizontal, 4)
+    }
+
+    private var controlBackground: Color {
+        Color(nsColor: .controlBackgroundColor)
     }
 
     private var promptSearchText: Binding<String> {
@@ -173,5 +171,13 @@ struct CheckInPromptContent: View {
         DispatchQueue.main.async {
             isSearchFieldFocused = true
         }
+    }
+
+    private func promptSupportingSubtitle(at date: Date) -> String {
+        guard let appModel else {
+            return state.supportingSubtitle
+        }
+
+        return appModel.promptSupportingSubtitle(at: date)
     }
 }

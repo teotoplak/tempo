@@ -74,7 +74,6 @@ final class CheckInPromptPresentationTests: XCTestCase {
         )
 
         appModel.nextCheckInAt = now.addingTimeInterval(300)
-        appModel.delayedUntilAt = now.addingTimeInterval(600)
         appModel.silenceEndsAt = now.addingTimeInterval(900)
         appModel.isPromptOverdue = false
 
@@ -82,7 +81,7 @@ final class CheckInPromptPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testNextRuntimeUpdateStopsWhenPromptIsAlreadyOverdue() {
+    func testNextRuntimeUpdateUsesIdleDeadlineWhenPromptIsShown() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let appModel = TempoAppModel(
             modelContainer: TempoModelContainer.inMemory(),
@@ -93,8 +92,10 @@ final class CheckInPromptPresentationTests: XCTestCase {
 
         appModel.nextCheckInAt = now.addingTimeInterval(300)
         appModel.isPromptOverdue = true
+        appModel.accountableElapsedInterval = 25 * 60
+        appModel.presentCheckInPromptIfNeeded()
 
-        XCTAssertNil(appModel.nextRuntimeUpdateAt(referenceDate: now))
+        XCTAssertEqual(appModel.nextRuntimeUpdateAt(referenceDate: now), now.addingTimeInterval(5 * 60))
     }
 
     @MainActor

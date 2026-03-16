@@ -52,21 +52,46 @@ final class TempoAppBootstrapTests: XCTestCase {
     }
 
     @MainActor
-    func testDetectInactivityIfNeededMarksIdlePending() {
+    func testCheckInNowMarksReturnedIdleAsResolved() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now)
+        )
+        let pendingIdleStart = now.addingTimeInterval(-(15 * 60))
+        let pendingIdleDetectedAt = now.addingTimeInterval(-(10 * 60))
+        model.schedulerStateRecord.pendingIdleStartedAt = pendingIdleStart
+        model.schedulerStateRecord.pendingIdleEndedAt = pendingIdleDetectedAt
+        model.schedulerStateRecord.pendingIdleReason = "inactivity"
+        model.pendingIdleStartedAt = pendingIdleStart
+        model.pendingIdleEndedAt = pendingIdleDetectedAt
+        model.pendingIdleReason = "inactivity"
+        model.pendingIdleDuration = pendingIdleDetectedAt.timeIntervalSince(pendingIdleStart)
+        model.isIdlePending = true
+
+        model.checkInNow()
+
+        XCTAssertTrue(model.isIdlePending)
+        XCTAssertEqual(model.schedulerStateRecord.idleResolvedAt, now)
+        XCTAssertEqual(model.pendingIdleEndedAt, now)
+        XCTAssertTrue(model.checkInPromptState.isPresented)
+        XCTAssertNil(model.nextCheckInAt)
+    }
+
+    @MainActor
+    func testPerformInitialLaunchShowsPromptImmediately() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = TempoAppModel(
             modelContainer: TempoModelContainer.inMemory(),
             clock: FixedBootstrapClock(now: now)
         )
         model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(30 * 60))
-        model.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(-(5 * 60))
 
-        model.detectInactivityIfNeeded(activityDate: now.addingTimeInterval(-(7 * 60)))
+        model.performInitialLaunchIfNeeded()
 
-        XCTAssertTrue(model.isIdlePending)
-        XCTAssertFalse(model.checkInPromptState.isPresented)
-        XCTAssertEqual(model.accountableElapsedInterval, 0)
-        XCTAssertEqual(model.pendingIdleDuration, 7 * 60)
+        XCTAssertTrue(model.checkInPromptState.isPresented)
+        XCTAssertTrue(model.isPromptOverdue)
+        XCTAssertFalse(model.isIdlePending)
     }
 
     @MainActor
@@ -256,7 +281,6 @@ final class TempoAppBootstrapTests: XCTestCase {
         )
         model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(3 * 60 * 60))
         model.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(-(2 * 60 * 60))
-        model.schedulerStateRecord.silencedAt = now.addingTimeInterval(-(4 * 60 * 60))
         model.schedulerStateRecord.silenceEndsAt = now.addingTimeInterval(-(90 * 60))
 
         model.performInitialLaunchIfNeeded()
@@ -264,7 +288,9 @@ final class TempoAppBootstrapTests: XCTestCase {
         XCTAssertFalse(model.isSilenced)
         XCTAssertNil(model.silenceEndsAt)
         XCTAssertEqual(model.nextCheckInAt, now.addingTimeInterval(25 * 60))
-        XCTAssertEqual(model.accountableElapsedInterval, 25 * 60)
+        XCTAssertTrue(model.isPromptOverdue)
+        XCTAssertTrue(model.checkInPromptState.isPresented)
+        XCTAssertEqual(model.accountableElapsedInterval, 3 * 60 * 60)
     }
 
     @MainActor
@@ -279,12 +305,41 @@ final class TempoAppBootstrapTests: XCTestCase {
         model.settings.idleThresholdMinutes = 10_000
         model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(4 * 60 * 60))
         model.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(-(2 * 60 * 60))
-        model.schedulerStateRecord.lastAppLaunchAt = now.addingTimeInterval(-(40 * 60))
 
         model.handleSceneActivation()
 
         XCTAssertTrue(model.isPromptOverdue)
-        XCTAssertEqual(model.accountableElapsedInterval, 40 * 60)
+        XCTAssertEqual(model.accountableElapsedInterval, (2 * 60 * 60) + (25 * 60))
+    }
+
+    @MainActor
+    func testHandleSceneActivationMarksReturnedIdleAsResolvedWhenActivityResumes() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now),
+            calendar: fixedBootstrapCalendar(),
+            launchAtLoginController: FixedLaunchAtLoginController(isEnabled: true)
+        )
+        model.settings.idleThresholdMinutes = 10_000
+        let pendingIdleStart = now.addingTimeInterval(-(15 * 60))
+        let pendingIdleDetectedAt = now.addingTimeInterval(-(10 * 60))
+        model.schedulerStateRecord.pendingIdleStartedAt = pendingIdleStart
+        model.schedulerStateRecord.pendingIdleEndedAt = pendingIdleDetectedAt
+        model.schedulerStateRecord.pendingIdleReason = "inactivity"
+        model.pendingIdleStartedAt = pendingIdleStart
+        model.pendingIdleEndedAt = pendingIdleDetectedAt
+        model.pendingIdleReason = "inactivity"
+        model.pendingIdleDuration = pendingIdleDetectedAt.timeIntervalSince(pendingIdleStart)
+        model.isIdlePending = true
+
+        model.handleSceneActivation(activityDate: now)
+
+        XCTAssertTrue(model.isIdlePending)
+        XCTAssertEqual(model.schedulerStateRecord.idleResolvedAt, now)
+        XCTAssertEqual(model.pendingIdleEndedAt, now)
+        XCTAssertTrue(model.checkInPromptState.isPresented)
+        XCTAssertNil(model.nextCheckInAt)
     }
 }
 

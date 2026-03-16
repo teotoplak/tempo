@@ -4,6 +4,7 @@ struct MenuBarRootView: View {
     @Bindable var appModel: TempoAppModel
     @Environment(\.openWindow) private var openWindow
     @State private var isShowingSettings = false
+    @State private var isShowingTroubleshootingCheckIns = false
     @Environment(\.calendar) private var calendar
 
     private let actionColumns = [
@@ -253,7 +254,7 @@ struct MenuBarRootView: View {
             }
             .padding(.bottom, 2)
 
-            if appModel.analyticsProjectSummaries.isEmpty {
+            if appModel.menuBarDayProjectSummaries.isEmpty {
                 ContentUnavailableView {
                     Label("No tracked time today", systemImage: "clock.badge.questionmark")
                 } description: {
@@ -263,7 +264,7 @@ struct MenuBarRootView: View {
                 .padding(.vertical, 10)
             } else {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(appModel.analyticsProjectSummaries, id: \.id) { summary in
+                    ForEach(appModel.menuBarDayProjectSummaries, id: \.id) { summary in
                         projectSummaryRow(summary)
                     }
                 }
@@ -275,13 +276,13 @@ struct MenuBarRootView: View {
                 LazyVGrid(columns: timelineStatColumns, alignment: .leading, spacing: 10) {
                     timelineStat(
                         icon: "clock",
-                        value: TempoAppModel.formattedTrackedDuration(appModel.analyticsTotalDuration),
+                        value: TempoAppModel.formattedTrackedDuration(appModel.menuBarDayTotalDuration),
                         label: "Tracked"
                     )
 
                     timelineStat(
                         icon: "play.circle",
-                        value: appModel.analyticsFirstEntryStartText,
+                        value: menuBarDayFirstEntryStartText,
                         label: "Started"
                     )
 
@@ -291,6 +292,27 @@ struct MenuBarRootView: View {
                         label: "Finished"
                     )
                 }
+            }
+
+            Divider()
+                .padding(.vertical, 2)
+
+            DisclosureGroup(isExpanded: $isShowingTroubleshootingCheckIns) {
+                VStack(alignment: .leading, spacing: 8) {
+                    if appModel.menuBarDayCheckIns.isEmpty {
+                        Text("No check-ins recorded in this day window.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(appModel.menuBarDayCheckIns) { checkIn in
+                            troubleshootingCheckInRow(checkIn)
+                        }
+                    }
+                }
+                .padding(.top, 8)
+            } label: {
+                Text("Troubleshooting check-ins (\(appModel.menuBarDayCheckIns.count))")
+                    .font(.system(size: 12, weight: .semibold))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -350,8 +372,38 @@ struct MenuBarRootView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private func troubleshootingCheckInRow(_ checkIn: TimeAllocationCheckIn) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(TempoAppModel.formattedClockTime(checkIn.timestamp))
+                    .font(.system(size: 11, weight: .semibold))
+                    .monospacedDigit()
+
+                Text(troubleshootingCheckInTitle(for: checkIn))
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+
+            Text("source: \(checkIn.source)")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func troubleshootingCheckInTitle(for checkIn: TimeAllocationCheckIn) -> String {
+        switch checkIn.kind {
+        case let .project(_, name):
+            return "project · \(name)"
+        case let .idle(kind):
+            return "idle · \(kind.rawValue)"
+        }
+    }
+
     private var summaryDateTitle: String {
-        let summaryDate = appModel.analyticsPeriod.startDate
+        let summaryDate = appModel.menuBarDayPeriod.startDate
         if calendar.isDateInToday(summaryDate) {
             return "Today \(summaryDate.formatted(.dateTime.month(.wide).day().year()))"
         }
@@ -360,11 +412,19 @@ struct MenuBarRootView: View {
     }
 
     private var lastTrackedTimeText: String {
-        guard let lastInterval = appModel.analyticsTimelineIntervals.max(by: { $0.endDate < $1.endDate }) else {
+        guard let lastInterval = appModel.menuBarDayTimelineIntervals.max(by: { $0.endDate < $1.endDate }) else {
             return "No output"
         }
 
         return TempoAppModel.formattedClockTime(lastInterval.endDate)
+    }
+
+    private var menuBarDayFirstEntryStartText: String {
+        guard let firstEntryStartDate = appModel.menuBarDayFirstEntryStartDate else {
+            return "No input yet"
+        }
+
+        return TempoAppModel.formattedClockTime(firstEntryStartDate)
     }
 
     private var cardBackground: some ShapeStyle {
