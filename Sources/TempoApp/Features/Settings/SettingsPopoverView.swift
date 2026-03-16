@@ -40,6 +40,26 @@ struct SettingsPopoverView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Launch at Login") {
+                Toggle("Launch Tempo when I sign in", isOn: Binding(
+                    get: { appModel.launchAtLoginEnabled },
+                    set: { enabled in
+                        appModel.launchAtLoginEnabled = enabled
+                        try? appModel.saveLaunchAtLoginPreference(enabled)
+                    }
+                ))
+
+                Text("Uses the native macOS login item registration for this app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let errorMessage = appModel.launchAtLoginErrorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
         }
         .formStyle(.grouped)
         .onChange(of: appModel.settings.pollingIntervalMinutes) { _, _ in persistSettings() }

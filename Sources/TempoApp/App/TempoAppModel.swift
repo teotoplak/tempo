@@ -97,24 +97,29 @@ final class TempoAppModel {
     var analyticsTopProjectName: String?
     var analyticsExportStatusMessage: String?
     var analyticsExportErrorMessage: String?
+    var launchAtLoginEnabled = false
+    var launchAtLoginErrorMessage: String?
 
     private let clock: any SchedulerClock
     private let scheduler: PollingScheduler
     private let schedulerStateStore: SchedulerStateStore
     private let analyticsStore: AnalyticsStore
     private let csvExportService: CSVExportService
+    private let launchAtLoginController: any LaunchAtLoginControlling
     private var hasHandledInitialLaunch = false
     private var workspaceObservers: [NSObjectProtocol] = []
     private var checkInPromptWindowController: CheckInPromptWindowController?
 
     init(
         modelContainer: ModelContainer? = nil,
-        clock: any SchedulerClock = SystemSchedulerClock()
+        clock: any SchedulerClock = SystemSchedulerClock(),
+        launchAtLoginController: any LaunchAtLoginControlling = SMAppServiceLaunchAtLoginController()
     ) {
         let resolvedContainer = modelContainer ?? TempoModelContainer.live()
         self.modelContainer = resolvedContainer
         self.modelContext = ModelContext(resolvedContainer)
         self.clock = clock
+        self.launchAtLoginController = launchAtLoginController
         self.scheduler = PollingScheduler(clock: clock)
         self.analyticsPeriod = AnalyticsPeriod(
             startDate: clock.now,
@@ -152,6 +157,7 @@ final class TempoAppModel {
         self.settingsStore = LocalSettingsStore(record: self.settings)
         self.schedulerStore = schedulerStateStore
         self.projectStore = LocalProjectStore(modelContext: self.modelContext)
+        self.launchAtLoginEnabled = launchAtLoginController.isEnabled
 
         apply(snapshot: scheduler.snapshot(for: self.schedulerStateRecord, settings: self.settings, eventDate: clock.now))
         refreshAnalytics(referenceDate: clock.now)
@@ -165,8 +171,34 @@ final class TempoAppModel {
 
         hasHandledInitialLaunch = true
         observeWorkspaceWake()
+        syncLaunchAtLoginPreferenceFromSystem()
         handleSchedulerTransition(eventDate: clock.now)
         refreshAnalytics(referenceDate: clock.now)
+    }
+
+    func syncLaunchAtLoginPreferenceFromSystem() {
+        let isEnabled = launchAtLoginController.isEnabled
+        launchAtLoginEnabled = isEnabled
+        settings.launchAtLoginEnabled = isEnabled
+        launchAtLoginErrorMessage = nil
+        try? modelContext.save()
+    }
+
+    func saveLaunchAtLoginPreference(_ enabled: Bool) throws {
+        do {
+            try launchAtLoginController.setEnabled(enabled)
+            launchAtLoginEnabled = enabled
+            settings.launchAtLoginEnabled = enabled
+            launchAtLoginErrorMessage = nil
+            try modelContext.save()
+        } catch {
+            let systemState = launchAtLoginController.isEnabled
+            launchAtLoginEnabled = systemState
+            settings.launchAtLoginEnabled = systemState
+            launchAtLoginErrorMessage = error.localizedDescription
+            try? modelContext.save()
+            throw error
+        }
     }
 
     func handleSceneActivation() {
