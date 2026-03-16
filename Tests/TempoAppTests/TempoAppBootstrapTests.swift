@@ -131,9 +131,13 @@ final class TempoAppBootstrapTests: XCTestCase {
             encoding: .utf8
         )
 
-        XCTAssertTrue(menuSource.contains("Open Analytics"))
+        XCTAssertTrue(menuSource.contains("Check In Now"))
+        XCTAssertTrue(menuSource.contains("Analytics"))
+        XCTAssertTrue(menuSource.contains("Projects"))
         XCTAssertTrue(menuSource.contains("Settings"))
         XCTAssertTrue(menuSource.contains("Quit Tempo"))
+        XCTAssertTrue(menuSource.contains("appModel.setMenuBarWindowVisible(true)"))
+        XCTAssertTrue(menuSource.contains("CheckInPromptView("))
     }
 
     @MainActor

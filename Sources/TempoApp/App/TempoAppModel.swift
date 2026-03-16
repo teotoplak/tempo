@@ -99,6 +99,8 @@ final class TempoAppModel {
     var analyticsExportErrorMessage: String?
     var launchAtLoginEnabled = false
     var launchAtLoginErrorMessage: String?
+    private var lastSavedPollingIntervalMinutes = 25
+    private var isMenuBarWindowVisible = false
 
     private let clock: any SchedulerClock
     private let calendar: Calendar
@@ -110,6 +112,7 @@ final class TempoAppModel {
     private var hasHandledInitialLaunch = false
     private var workspaceObservers: [NSObjectProtocol] = []
     private var checkInPromptWindowController: CheckInPromptWindowController?
+    private var scheduledPromptTimer: Timer?
 
     init(
         modelContainer: ModelContainer? = nil,
@@ -161,6 +164,7 @@ final class TempoAppModel {
         self.schedulerStore = schedulerStateStore
         self.projectStore = LocalProjectStore(modelContext: self.modelContext)
         self.launchAtLoginEnabled = launchAtLoginController.isEnabled
+        self.lastSavedPollingIntervalMinutes = self.settings.pollingIntervalMinutes
 
         apply(snapshot: scheduler.snapshot(for: self.schedulerStateRecord, settings: self.settings, eventDate: clock.now))
         refreshAnalytics(referenceDate: clock.now)
@@ -238,7 +242,16 @@ final class TempoAppModel {
     func attachCheckInPromptWindowController(_ controller: CheckInPromptWindowController) {
         checkInPromptWindowController = controller
         controller.bind(appModel: self)
-        controller.update(with: checkInPromptState)
+        controller.update(with: detachedCheckInPromptState)
+    }
+
+    func setMenuBarWindowVisible(_ isVisible: Bool) {
+        guard isMenuBarWindowVisible != isVisible else {
+            return
+        }
+
+        isMenuBarWindowVisible = isVisible
+        checkInPromptWindowController?.update(with: detachedCheckInPromptState)
     }
 
     func refreshCheckInPromptState() {
@@ -258,17 +271,18 @@ final class TempoAppModel {
             promptTitle: promptTitle,
             supportingSubtitle: supportingSubtitle
         )
-        checkInPromptWindowController?.update(with: checkInPromptState)
+        checkInPromptWindowController?.update(with: detachedCheckInPromptState)
     }
 
     func presentCheckInPromptIfNeeded() {
         refreshCheckInPromptState()
-        checkInPromptWindowController?.update(with: checkInPromptState)
+        checkInPromptWindowController?.update(with: detachedCheckInPromptState)
     }
 
     func dismissCheckInPrompt() {
         checkInPromptState.isPresented = false
         checkInPromptWindowController?.hide()
+        schedulePromptTimerIfNeeded()
     }
 
     var delayPresetMinutes: [Int] {
@@ -692,7 +706,30 @@ final class TempoAppModel {
 
     func saveSettings() throws {
         try modelContext.save()
-        recoverSchedulerState(eventDate: clock.now)
+        defer {
+            lastSavedPollingIntervalMinutes = settings.pollingIntervalMinutes
+        }
+
+        guard settings.pollingIntervalMinutes != lastSavedPollingIntervalMinutes else {
+            recoverSchedulerState(eventDate: clock.now)
+            return
+        }
+
+        if isIdlePending || isPromptDelayed || isSilenced {
+            recoverSchedulerState(eventDate: clock.now)
+            return
+        }
+
+        let result = scheduler.rescheduleFromSettingsChange(
+            state: schedulerStateRecord,
+            settings: settings,
+            eventDate: clock.now
+        )
+        schedulerStateStore.apply(result, to: schedulerStateRecord)
+        try schedulerStateStore.save(schedulerStateRecord)
+
+        apply(snapshot: result.snapshot)
+        refreshCheckInPromptState()
     }
 
     func refreshAnalytics(referenceDate: Date) {
@@ -897,10 +934,57 @@ final class TempoAppModel {
             idleSplitSecondProjectID = nil
             idleSplitFirstDurationMinutes = 1
         }
+
+        schedulePromptTimerIfNeeded()
     }
 
     private var shouldPresentPendingIdlePrompt: Bool {
         isIdlePending && schedulerStateRecord.idleResolvedAt != nil
+    }
+
+    var detachedCheckInPromptState: CheckInPromptState {
+        guard !isMenuBarWindowVisible else {
+            return .hidden
+        }
+
+        return checkInPromptState
+    }
+
+    private func schedulePromptTimerIfNeeded() {
+        scheduledPromptTimer?.invalidate()
+        scheduledPromptTimer = nil
+
+        guard let nextRuntimeUpdateAt = nextRuntimeUpdateAt(referenceDate: clock.now) else {
+            return
+        }
+
+        let interval = nextRuntimeUpdateAt.timeIntervalSince(clock.now)
+        guard interval > 0 else {
+            handleScheduledPromptTimerFired()
+            return
+        }
+
+        scheduledPromptTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleScheduledPromptTimerFired()
+            }
+        }
+    }
+
+    private func handleScheduledPromptTimerFired() {
+        scheduledPromptTimer?.invalidate()
+        scheduledPromptTimer = nil
+        recoverSchedulerState(eventDate: clock.now)
+        presentCheckInPromptIfNeeded()
+    }
+
+    func nextRuntimeUpdateAt(referenceDate: Date) -> Date? {
+        if shouldPresentPendingIdlePrompt || isPromptOverdue {
+            return nil
+        }
+
+        let candidates = [nextCheckInAt, delayedUntilAt, silenceEndsAt].compactMap { $0 }
+        return candidates.filter { $0 > referenceDate }.min()
     }
 
     private var pendingIdleReasonLabel: String {

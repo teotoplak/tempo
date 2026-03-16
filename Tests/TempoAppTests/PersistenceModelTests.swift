@@ -97,6 +97,24 @@ final class PersistenceModelTests: XCTestCase {
     }
 
     @MainActor
+    func testSaveSettingsReschedulesNextCheckInWhenPollingIntervalChanges() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedPersistenceClock(now: now)
+        )
+        appModel.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(20 * 60)
+        appModel.nextCheckInAt = now.addingTimeInterval(20 * 60)
+        appModel.settings.pollingIntervalMinutes = 5
+
+        try appModel.saveSettings()
+
+        XCTAssertEqual(appModel.nextCheckInAt, now.addingTimeInterval(5 * 60))
+        XCTAssertFalse(appModel.isPromptOverdue)
+        XCTAssertEqual(appModel.accountableElapsedInterval, 5 * 60)
+    }
+
+    @MainActor
     func testSplitPendingIdleRejectsOutOfRangeDuration() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let appModel = TempoAppModel(

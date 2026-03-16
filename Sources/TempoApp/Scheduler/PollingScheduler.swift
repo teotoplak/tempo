@@ -367,6 +367,34 @@ final class PollingScheduler {
         )
     }
 
+    func rescheduleFromSettingsChange(
+        state: SchedulerStateRecord,
+        settings: AppSettingsRecord,
+        eventDate: Date
+    ) -> PollingSchedulerResult {
+        let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
+        let nextCheckInAt = eventDate.addingTimeInterval(pollingInterval)
+
+        return makeResult(
+            nextCheckInAt: nextCheckInAt,
+            isPromptOverdue: false,
+            accountableElapsedInterval: pollingInterval,
+            accountableWorkEndAt: nextCheckInAt,
+            lastCheckInAt: state.lastCheckInAt,
+            lastAppLaunchAt: eventDate,
+            idleBeganAt: state.idleBeganAt,
+            idleDetectedAt: state.idleDetectedAt,
+            idleResolvedAt: state.idleResolvedAt,
+            pendingIdleStartedAt: nil,
+            pendingIdleEndedAt: nil,
+            pendingIdleReason: nil,
+            delayedUntilAt: nil,
+            delayedFromPromptAt: nil,
+            silencedAt: nil,
+            silenceEndsAt: nil
+        )
+    }
+
     func beginIdleInterval(
         state: SchedulerStateRecord,
         settings: AppSettingsRecord,
