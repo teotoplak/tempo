@@ -6,6 +6,7 @@ final class AppSettingsRecord {
     @Attribute(.unique) var singletonKey: String
     var pollingIntervalMinutes: Int
     var idleThresholdMinutes: Int
+    var analyticsDayCutoffHour: Int
     private var delayPresetMinutesStorage: String
     var launchAtLoginEnabled: Bool
 
@@ -29,12 +30,14 @@ final class AppSettingsRecord {
         singletonKey: String = "default",
         pollingIntervalMinutes: Int = 25,
         idleThresholdMinutes: Int = 5,
+        analyticsDayCutoffHour: Int = 6,
         delayPresetMinutes: [Int] = [15, 30],
         launchAtLoginEnabled: Bool = false
     ) {
         self.singletonKey = singletonKey
         self.pollingIntervalMinutes = pollingIntervalMinutes
         self.idleThresholdMinutes = idleThresholdMinutes
+        self.analyticsDayCutoffHour = min(max(analyticsDayCutoffHour, 0), 23)
         self.delayPresetMinutesStorage = delayPresetMinutes.map(String.init).joined(separator: ",")
         self.launchAtLoginEnabled = launchAtLoginEnabled
     }

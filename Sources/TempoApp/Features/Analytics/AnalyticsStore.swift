@@ -4,6 +4,7 @@ import SwiftData
 @MainActor
 final class AnalyticsStore {
     private let modelContext: ModelContext
+    private let engine = TimeAllocationEngine()
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
@@ -12,129 +13,96 @@ final class AnalyticsStore {
     func period(
         for range: AnalyticsRange,
         referenceDate: Date,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        dayCutoffHour: Int = 6
     ) -> AnalyticsPeriod {
-        let startDate: Date
-        let endDate: Date
-
-        switch range {
-        case .day:
-            startDate = calendar.startOfDay(for: referenceDate)
-            endDate = calendar.date(byAdding: .day, value: 1, to: startDate) ?? startDate
-        case .week:
-            let interval = calendar.dateInterval(of: .weekOfYear, for: referenceDate)
-            startDate = interval?.start ?? calendar.startOfDay(for: referenceDate)
-            endDate = interval?.end ?? (calendar.date(byAdding: .day, value: 7, to: startDate) ?? startDate)
-        case .month:
-            let interval = calendar.dateInterval(of: .month, for: referenceDate)
-            startDate = interval?.start ?? calendar.startOfDay(for: referenceDate)
-            endDate = interval?.end ?? (calendar.date(byAdding: .month, value: 1, to: startDate) ?? startDate)
-        case .year:
-            let interval = calendar.dateInterval(of: .year, for: referenceDate)
-            startDate = interval?.start ?? calendar.startOfDay(for: referenceDate)
-            endDate = interval?.end ?? (calendar.date(byAdding: .year, value: 1, to: startDate) ?? startDate)
-        }
-
-        return AnalyticsPeriod(
-            startDate: startDate,
-            endDate: endDate,
-            label: Self.periodLabel(for: range, startDate: startDate, endDate: endDate, calendar: calendar)
+        engine.period(
+            for: range,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            dayCutoffHour: dayCutoffHour
         )
     }
 
     func summary(
         range: AnalyticsRange,
         referenceDate: Date,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        dayCutoffHour: Int = 6
     ) -> AnalyticsSummarySnapshot {
-        let period = period(for: range, referenceDate: referenceDate, calendar: calendar)
-        let descriptor = FetchDescriptor<TimeEntryRecord>(sortBy: [SortDescriptor(\.startAt)])
-        let entries = ((try? modelContext.fetch(descriptor)) ?? []).filter { entry in
-            entry.endAt > period.startDate && entry.startAt < period.endDate
-        }
-        let timelineIntervals = entries.compactMap { clippedInterval(for: $0, within: period) }
+        let descriptor = FetchDescriptor<CheckInRecord>(sortBy: [SortDescriptor(\.timestamp)])
+        let records = (try? modelContext.fetch(descriptor)) ?? []
+        let allocationSummary = engine.summary(
+            checkIns: records.compactMap(Self.checkIn(from:)),
+            range: range,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            dayCutoffHour: dayCutoffHour
+        )
 
-        let totalDuration = timelineIntervals.reduce(into: 0.0) { total, interval in
-            total += interval.endDate.timeIntervalSince(interval.startDate)
-        }
-
-        var grouped: [UUID?: (name: String, duration: TimeInterval, count: Int)] = [:]
-        for entry in entries {
-            guard let interval = clippedInterval(for: entry, within: period) else {
-                continue
+        let projectSummaries = allocationSummary.bucketSummaries.map { summary in
+            let projectID: UUID?
+            switch summary.bucket {
+            case let .project(id, _):
+                projectID = id
+            case .idle:
+                projectID = nil
             }
 
-            let projectID = entry.project?.id
-            let projectName = entry.project?.name ?? "Unassigned"
-            let duration = interval.endDate.timeIntervalSince(interval.startDate)
-            let current = grouped[projectID] ?? (name: projectName, duration: 0, count: 0)
-            grouped[projectID] = (
-                name: projectName,
-                duration: current.duration + duration,
-                count: current.count + 1
-            )
-        }
-
-        let projectSummaries = grouped.map { projectID, group in
-            AnalyticsProjectSummary(
+            return AnalyticsProjectSummary(
                 projectID: projectID,
-                projectName: group.name,
-                totalDuration: group.duration,
-                percentageOfTotal: totalDuration > 0 ? group.duration / totalDuration : 0,
-                entryCount: group.count
+                projectName: summary.bucket.displayName,
+                totalDuration: summary.totalDuration,
+                percentageOfTotal: allocationSummary.totalDuration > 0 ? summary.totalDuration / allocationSummary.totalDuration : 0,
+                entryCount: summary.intervalCount
             )
         }
-        .sorted { lhs, rhs in
-            if lhs.totalDuration != rhs.totalDuration {
-                return lhs.totalDuration > rhs.totalDuration
-            }
-
-            return lhs.projectName.localizedCaseInsensitiveCompare(rhs.projectName) == .orderedAscending
+        let timelineIntervals = allocationSummary.allocatedIntervals.map { interval in
+            AnalyticsTimelineInterval(
+                startDate: interval.startDate,
+                endDate: interval.endDate,
+                projectName: interval.bucket.displayName
+            )
         }
 
         return AnalyticsSummarySnapshot(
-            period: period,
-            totalDuration: totalDuration,
+            period: allocationSummary.period,
+            totalDuration: allocationSummary.totalDuration,
             projectSummaries: projectSummaries,
             topProjectName: projectSummaries.first?.projectName,
-            firstEntryStartDate: range == .day ? timelineIntervals.first?.startDate : nil,
+            firstEntryStartDate: range == .day ? allocationSummary.firstAllocatedIntervalStartDate : nil,
+            checkIns: allocationSummary.checkIns,
+            allocatedIntervals: allocationSummary.allocatedIntervals,
             timelineIntervals: range == .day ? timelineIntervals : []
         )
     }
 
-    private func clippedInterval(
-        for entry: TimeEntryRecord,
-        within period: AnalyticsPeriod
-    ) -> AnalyticsTimelineInterval? {
-        let clippedStart = max(entry.startAt, period.startDate)
-        let clippedEnd = min(entry.endAt, period.endDate)
-        guard clippedEnd > clippedStart else {
+    private static func checkIn(from record: CheckInRecord) -> TimeAllocationCheckIn? {
+        switch record.kind {
+        case "project":
+            guard let project = record.project else {
+                return nil
+            }
+
+            return TimeAllocationCheckIn(
+                id: record.id,
+                timestamp: record.timestamp,
+                kind: .project(id: project.id, name: project.name),
+                source: record.source
+            )
+        case "idle":
+            guard let idleKindRawValue = record.idleKind, let idleKind = TimeAllocationIdleKind(rawValue: idleKindRawValue) else {
+                return nil
+            }
+
+            return TimeAllocationCheckIn(
+                id: record.id,
+                timestamp: record.timestamp,
+                kind: .idle(kind: idleKind),
+                source: record.source
+            )
+        default:
             return nil
-        }
-
-        return AnalyticsTimelineInterval(
-            startDate: clippedStart,
-            endDate: clippedEnd,
-            projectName: entry.project?.name ?? "Unassigned"
-        )
-    }
-
-    private static func periodLabel(
-        for range: AnalyticsRange,
-        startDate: Date,
-        endDate: Date,
-        calendar: Calendar
-    ) -> String {
-        let inclusiveEndDate = calendar.date(byAdding: .second, value: -1, to: endDate) ?? endDate
-        switch range {
-        case .day:
-            return startDate.formatted(date: .abbreviated, time: .omitted)
-        case .week:
-            return "\(startDate.formatted(date: .abbreviated, time: .omitted)) – \(inclusiveEndDate.formatted(date: .abbreviated, time: .omitted))"
-        case .month:
-            return startDate.formatted(.dateTime.month(.wide).year())
-        case .year:
-            return startDate.formatted(.dateTime.year())
         }
     }
 }

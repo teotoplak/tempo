@@ -259,7 +259,7 @@ final class TempoAppModel {
     func refreshCheckInPromptState() {
         ensureIdleSelectionDefaults()
         let shouldPresent = isPromptOverdue || shouldPresentPendingIdlePrompt
-        let promptTitle = shouldPresentPendingIdlePrompt ? "Resolve idle time" : "What are you currently doing"
+        let promptTitle = "What are you currently doing"
         let supportingSubtitle = shouldPresentPendingIdlePrompt
             ? Self.idleSupportingSubtitle(duration: pendingIdleDuration, reason: pendingIdleReasonLabel)
             : Self.supportingSubtitle(
@@ -292,21 +292,16 @@ final class TempoAppModel {
     }
 
     var currentProjectContextLabel: String {
-        latestCompletedTimeEntry()?.project?.name ?? "No recent project"
+        latestProjectCheckIn()?.project?.name ?? "No recent project"
     }
 
     var todaysTrackedDuration: TimeInterval {
-        let targetDay = calendar.startOfDay(for: clock.now)
-        let descriptor = FetchDescriptor<TimeEntryRecord>(sortBy: [SortDescriptor(\.endAt, order: .reverse)])
-        let entries = (try? modelContext.fetch(descriptor)) ?? []
-
-        return entries.reduce(into: 0) { total, entry in
-            guard calendar.startOfDay(for: entry.endAt) == targetDay else {
-                return
-            }
-
-            total += entry.endAt.timeIntervalSince(entry.startAt)
-        }
+        analyticsStore.summary(
+            range: .day,
+            referenceDate: clock.now,
+            calendar: calendar,
+            dayCutoffHour: settings.analyticsDayCutoffHour
+        ).totalDuration
     }
 
     func menuBarPrimaryStatus(at date: Date) -> String {
@@ -332,7 +327,7 @@ final class TempoAppModel {
 
     func menuBarSecondaryStatus(at date: Date) -> String {
         if isSilenced, let silenceEndsAt {
-            return "Resumes at local midnight (\(Self.formattedClockTime(silenceEndsAt)))"
+            return "Resumes at daily cutoff (\(Self.formattedClockTime(silenceEndsAt)))"
         }
 
         if isPromptDelayed, let delayedUntilAt {
@@ -504,16 +499,7 @@ final class TempoAppModel {
         }
 
         let completionDate = clock.now
-        let entryEndAt = completionDate
-        let entryStartAt = entryEndAt.addingTimeInterval(-accountableElapsedInterval)
-        let timeEntry = TimeEntryRecord(
-            project: project,
-            startAt: entryStartAt,
-            endAt: entryEndAt,
-            source: "check-in"
-        )
-        modelContext.insert(timeEntry)
-        try modelContext.save()
+        try persistProjectCheckIn(project, at: completionDate, source: "check-in")
 
         let completionResult = scheduler.completeCheckIn(
             state: schedulerStateRecord,
@@ -560,6 +546,11 @@ final class TempoAppModel {
     }
 
     func silenceForRestOfDay() throws {
+        try persistIdleCheckIn(
+            at: clock.now,
+            idleKind: .doneForDay,
+            source: "done-for-day"
+        )
         let result = scheduler.silenceUntilEndOfDay(
             state: schedulerStateRecord,
             settings: settings,
@@ -605,18 +596,12 @@ final class TempoAppModel {
     }
 
     func assignPendingIdle(to project: ProjectRecord) throws {
-        guard let pendingIdleStartedAt, let pendingIdleEndedAt else {
+        guard pendingIdleStartedAt != nil, let pendingIdleEndedAt else {
             throw IdleResolutionError.noPendingIdle
         }
 
-        modelContext.insert(
-            TimeEntryRecord(
-                project: project,
-                startAt: pendingIdleStartedAt,
-                endAt: pendingIdleEndedAt,
-                source: "idle-assigned"
-            )
-        )
+        let completionDate = max(clock.now, pendingIdleEndedAt)
+        try persistProjectCheckIn(project, at: completionDate, source: "idle-return")
         try completePendingIdleResolution()
         refreshAnalytics(referenceDate: clock.now)
     }
@@ -645,28 +630,7 @@ final class TempoAppModel {
             throw IdleResolutionError.invalidSplitDuration
         }
 
-        let splitAt = pendingIdleStartedAt.addingTimeInterval(firstDuration)
-        let secondDuration = pendingIdleEndedAt.timeIntervalSince(splitAt)
-        guard abs((firstDuration + secondDuration) - totalSeconds) < 0.5 else {
-            throw IdleResolutionError.invalidSplitDuration
-        }
-
-        modelContext.insert(
-            TimeEntryRecord(
-                project: firstProject,
-                startAt: pendingIdleStartedAt,
-                endAt: splitAt,
-                source: "idle-split"
-            )
-        )
-        modelContext.insert(
-            TimeEntryRecord(
-                project: secondProject,
-                startAt: splitAt,
-                endAt: pendingIdleEndedAt,
-                source: "idle-split"
-            )
-        )
+        try persistProjectCheckIn(secondProject, at: clock.now, source: "idle-return")
 
         try completePendingIdleResolution()
         refreshAnalytics(referenceDate: clock.now)
@@ -682,6 +646,12 @@ final class TempoAppModel {
         guard now.timeIntervalSince(activityDate) >= threshold else {
             return
         }
+
+        try? persistIdleCheckIn(
+            at: activityDate,
+            idleKind: .automaticThreshold,
+            source: "inactivity"
+        )
 
         let result = scheduler.beginIdleInterval(
             state: schedulerStateRecord,
@@ -706,6 +676,11 @@ final class TempoAppModel {
     }
 
     func handleScreenLock() {
+        try? persistIdleCheckIn(
+            at: clock.now,
+            idleKind: .automaticThreshold,
+            source: "screen-locked"
+        )
         let result = scheduler.beginIdleInterval(
             state: schedulerStateRecord,
             settings: settings,
@@ -742,7 +717,7 @@ final class TempoAppModel {
     }
 
     func deleteProject(_ project: ProjectRecord) throws {
-        if !project.timeEntries.isEmpty {
+        if !project.checkIns.isEmpty || !project.timeEntries.isEmpty {
             throw ProjectDeletionError.hasTrackedTime(project.name)
         }
 
@@ -782,7 +757,8 @@ final class TempoAppModel {
         let snapshot = analyticsStore.summary(
             range: selectedAnalyticsRange,
             referenceDate: referenceDate,
-            calendar: calendar
+            calendar: calendar,
+            dayCutoffHour: settings.analyticsDayCutoffHour
         )
         analyticsPeriod = snapshot.period
         analyticsTotalDuration = snapshot.totalDuration
@@ -809,7 +785,8 @@ final class TempoAppModel {
         do {
             let csv = csvExportService.csvString(
                 range: selectedAnalyticsRange,
-                referenceDate: clock.now
+                referenceDate: clock.now,
+                dayCutoffHour: settings.analyticsDayCutoffHour
             )
             try csv.write(to: destinationURL, atomically: true, encoding: .utf8)
             analyticsExportStatusMessage = "CSV exported"
@@ -843,7 +820,7 @@ final class TempoAppModel {
     }
 
     private func recentPromptProjectEndDates() -> [UUID: Date] {
-        let descriptor = FetchDescriptor<TimeEntryRecord>(sortBy: [SortDescriptor(\.endAt, order: .reverse)])
+        let descriptor = FetchDescriptor<CheckInRecord>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
         let entries = (try? modelContext.fetch(descriptor)) ?? []
         var latestEndDateByProjectID: [UUID: Date] = [:]
 
@@ -852,15 +829,39 @@ final class TempoAppModel {
                 continue
             }
 
-            latestEndDateByProjectID[project.id] = entry.endAt
+            latestEndDateByProjectID[project.id] = entry.timestamp
         }
 
         return latestEndDateByProjectID
     }
 
-    private func latestCompletedTimeEntry() -> TimeEntryRecord? {
-        let descriptor = FetchDescriptor<TimeEntryRecord>(sortBy: [SortDescriptor(\.endAt, order: .reverse)])
-        return try? modelContext.fetch(descriptor).first
+    private func latestProjectCheckIn() -> CheckInRecord? {
+        let descriptor = FetchDescriptor<CheckInRecord>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        return try? modelContext.fetch(descriptor).first(where: { $0.project != nil })
+    }
+
+    private func persistProjectCheckIn(_ project: ProjectRecord, at timestamp: Date, source: String) throws {
+        modelContext.insert(
+            CheckInRecord(
+                timestamp: timestamp,
+                kind: "project",
+                source: source,
+                project: project
+            )
+        )
+        try modelContext.save()
+    }
+
+    private func persistIdleCheckIn(at timestamp: Date, idleKind: TimeAllocationIdleKind, source: String) throws {
+        modelContext.insert(
+            CheckInRecord(
+                timestamp: timestamp,
+                kind: "idle",
+                source: source,
+                idleKind: idleKind.rawValue
+            )
+        )
+        try modelContext.save()
     }
 
     private func completePendingIdleResolution() throws {
@@ -952,7 +953,7 @@ final class TempoAppModel {
             return nil
         }
 
-        if let latestProjectID = latestCompletedTimeEntry()?.project?.id,
+        if let latestProjectID = latestProjectCheckIn()?.project?.id,
            let latestProject = candidates.first(where: { $0.id == latestProjectID }) {
             return latestProject
         }

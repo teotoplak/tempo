@@ -142,7 +142,7 @@ final class CheckInPromptWindowController {
     }
 
     static func promptSize(for state: CheckInPromptState) -> CGSize {
-        state.promptTitle == "Resolve idle time" ? idleResolutionPromptSize : standardPromptSize
+        standardPromptSize
     }
 
     static func wantsBackdrop(for state: CheckInPromptState) -> Bool {

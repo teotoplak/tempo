@@ -40,8 +40,8 @@ struct MenuBarRootView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         if appModel.isIdlePending {
                             statusCard(
-                                title: "Idle pending",
-                                primary: "Resolve idle time",
+                                title: "Idle detected",
+                                primary: "Check in when you return",
                                 secondary: appModel.pendingIdleStatusText,
                                 accent: Color(red: 0.78, green: 0.39, blue: 0.12),
                                 icon: "figure.walk.motion"

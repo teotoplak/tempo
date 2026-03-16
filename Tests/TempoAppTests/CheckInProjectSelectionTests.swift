@@ -5,7 +5,7 @@ import XCTest
 
 final class CheckInProjectSelectionTests: XCTestCase {
     @MainActor
-    func testRecentProjectsSortFirst() throws {
+    func testRecentProjectsSortUsingLatestProjectCheckIn() throws {
         let container = TempoModelContainer.inMemory()
         let appModel = TempoAppModel(modelContainer: container)
         let alpha = ProjectRecord(name: "Alpha", sortOrder: 0)
@@ -14,18 +14,16 @@ final class CheckInProjectSelectionTests: XCTestCase {
         appModel.modelContext.insert(alpha)
         appModel.modelContext.insert(beta)
         appModel.modelContext.insert(gamma)
-        appModel.modelContext.insert(TimeEntryRecord(
-            project: beta,
-            startAt: Date(timeIntervalSince1970: 100),
-            endAt: Date(timeIntervalSince1970: 200),
-            source: "manual"
-        ))
-        appModel.modelContext.insert(TimeEntryRecord(
-            project: alpha,
-            startAt: Date(timeIntervalSince1970: 300),
-            endAt: Date(timeIntervalSince1970: 400),
-            source: "manual"
-        ))
+        appModel.modelContext.insert(projectCheckIn(project: beta, at: Date(timeIntervalSince1970: 200)))
+        appModel.modelContext.insert(projectCheckIn(project: alpha, at: Date(timeIntervalSince1970: 400)))
+        appModel.modelContext.insert(
+            CheckInRecord(
+                timestamp: Date(timeIntervalSince1970: 500),
+                kind: "idle",
+                source: "test",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
         try appModel.modelContext.save()
 
         XCTAssertEqual(appModel.recentPromptProjects.map(\.name), ["Alpha", "Beta", "Gamma"])
@@ -54,5 +52,14 @@ final class CheckInProjectSelectionTests: XCTestCase {
         XCTAssertTrue(appModel.canCreatePromptProject(named: "  Deep Work  "))
         XCTAssertFalse(appModel.canCreatePromptProject(named: "Tempo"))
         XCTAssertFalse(appModel.canCreatePromptProject(named: "   "))
+    }
+
+    private func projectCheckIn(project: ProjectRecord, at date: Date) -> CheckInRecord {
+        CheckInRecord(
+            timestamp: date,
+            kind: "project",
+            source: "test",
+            project: project
+        )
     }
 }

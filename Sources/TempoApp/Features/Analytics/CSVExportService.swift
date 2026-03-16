@@ -19,28 +19,29 @@ final class CSVExportService {
         self.calendar = calendar
     }
 
-    func exportRows(range: AnalyticsRange, referenceDate: Date) -> [CSVExportRow] {
+    func exportRows(range: AnalyticsRange, referenceDate: Date, dayCutoffHour: Int = 6) -> [CSVExportRow] {
         let analyticsStore = AnalyticsStore(modelContext: modelContext)
-        let period = analyticsStore.period(for: range, referenceDate: referenceDate, calendar: calendar)
-        let descriptor = FetchDescriptor<TimeEntryRecord>(sortBy: [SortDescriptor(\.startAt)])
-        let entries = ((try? modelContext.fetch(descriptor)) ?? []).filter { entry in
-            entry.endAt >= period.startDate && entry.endAt < period.endDate
-        }
+        let summary = analyticsStore.summary(
+            range: range,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            dayCutoffHour: dayCutoffHour
+        )
 
-        return entries.sorted { $0.startAt < $1.startAt }.map { entry in
+        return summary.allocatedIntervals.map { interval in
             CSVExportRow(
-                date: dateFormatter.string(from: entry.startAt),
-                startTime: timeFormatter.string(from: entry.startAt),
-                endTime: timeFormatter.string(from: entry.endAt),
-                durationMinutes: max(Int(entry.endAt.timeIntervalSince(entry.startAt) / 60), 0),
-                projectName: entry.project?.name ?? "Unassigned"
+                date: dateFormatter.string(from: interval.startDate),
+                startTime: timeFormatter.string(from: interval.startDate),
+                endTime: timeFormatter.string(from: interval.endDate),
+                durationMinutes: max(Int(interval.duration / 60), 0),
+                projectName: interval.bucket.displayName
             )
         }
     }
 
-    func csvString(range: AnalyticsRange, referenceDate: Date) -> String {
+    func csvString(range: AnalyticsRange, referenceDate: Date, dayCutoffHour: Int = 6) -> String {
         let header = "date,start_time,end_time,duration_minutes,project_name"
-        let rows = exportRows(range: range, referenceDate: referenceDate).map { row in
+        let rows = exportRows(range: range, referenceDate: referenceDate, dayCutoffHour: dayCutoffHour).map { row in
             [
                 row.date,
                 row.startTime,

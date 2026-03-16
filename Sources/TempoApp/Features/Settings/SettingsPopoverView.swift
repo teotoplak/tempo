@@ -17,6 +17,16 @@ struct SettingsPopoverView: View {
                 }
             }
 
+            Section("Day Cutoff") {
+                Stepper(value: $appModel.settings.analyticsDayCutoffHour, in: 0...23) {
+                    Text("\(appModel.settings.analyticsDayCutoffHour):00")
+                }
+
+                Text("Analytics days and done-for-day silence reset at this hour.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Delay Presets") {
                 Stepper(value: Binding(
                     get: { appModel.settings.delayPresetMinutes.first ?? 15 },
@@ -64,6 +74,7 @@ struct SettingsPopoverView: View {
         .formStyle(.grouped)
         .onChange(of: appModel.settings.pollingIntervalMinutes) { _, _ in persistSettings() }
         .onChange(of: appModel.settings.idleThresholdMinutes) { _, _ in persistSettings() }
+        .onChange(of: appModel.settings.analyticsDayCutoffHour) { _, _ in persistSettings() }
         .onChange(of: appModel.settings.delayPresetMinutes) { _, _ in persistSettings() }
     }
 

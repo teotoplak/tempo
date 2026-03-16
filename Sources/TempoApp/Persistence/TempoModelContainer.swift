@@ -34,6 +34,7 @@ enum TempoModelContainer {
     private static func makeSchema() -> Schema {
         let models: [any PersistentModel.Type] = [
             ProjectRecord.self,
+            CheckInRecord.self,
             AppSettingsRecord.self,
             SchedulerStateRecord.self,
             TimeEntryRecord.self,

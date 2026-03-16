@@ -5,8 +5,7 @@ import XCTest
 
 final class AnalyticsAggregationTests: XCTestCase {
     @MainActor
-    func testDailySummaryGroupsDurationsByProject() throws {
-        let now = date(2026, 3, 16, 14, 0)
+    func testDailySummaryBuildsProjectAndIdleBreakdownFromCheckIns() throws {
         let container = TempoModelContainer.inMemory()
         let context = ModelContext(container)
         let store = AnalyticsStore(modelContext: context)
@@ -14,144 +13,131 @@ final class AnalyticsAggregationTests: XCTestCase {
         let admin = ProjectRecord(name: "Admin", sortOrder: 1)
         context.insert(client)
         context.insert(admin)
-
-        context.insert(entry(project: client, start: date(2026, 3, 16, 9, 0), end: date(2026, 3, 16, 10, 0)))
-        context.insert(entry(project: client, start: date(2026, 3, 16, 11, 0), end: date(2026, 3, 16, 11, 30)))
-        context.insert(entry(project: admin, start: date(2026, 3, 16, 12, 0), end: date(2026, 3, 16, 12, 45)))
-        context.insert(entry(project: admin, start: date(2026, 3, 15, 12, 0), end: date(2026, 3, 15, 12, 30)))
+        context.insert(projectCheckIn(project: client, at: date(2026, 3, 16, 9, 0, 0)))
+        context.insert(projectCheckIn(project: admin, at: date(2026, 3, 16, 9, 30, 0)))
+        context.insert(idleCheckIn(.automaticThreshold, at: date(2026, 3, 16, 10, 0, 0)))
+        context.insert(projectCheckIn(project: admin, at: date(2026, 3, 16, 10, 20, 0)))
         try context.save()
 
-        let summary = store.summary(range: .day, referenceDate: now, calendar: testCalendar)
+        let summary = store.summary(
+            range: .day,
+            referenceDate: date(2026, 3, 16, 12, 0, 0),
+            calendar: testCalendar,
+            dayCutoffHour: 6
+        )
 
-        XCTAssertEqual(summary.period.startDate, date(2026, 3, 16, 0, 0))
-        XCTAssertEqual(summary.period.endDate, date(2026, 3, 17, 0, 0))
-        XCTAssertEqual(summary.totalDuration, 8_100, accuracy: 0.001)
-        XCTAssertEqual(summary.projectSummaries.map(\.projectName), ["Client Work", "Admin"])
-        XCTAssertEqual(summary.projectSummaries[0].totalDuration, 5_400, accuracy: 0.001)
-        XCTAssertEqual(summary.projectSummaries[0].entryCount, 2)
-        XCTAssertEqual(summary.projectSummaries[1].totalDuration, 2_700, accuracy: 0.001)
-        XCTAssertEqual(summary.topProjectName, "Client Work")
-        XCTAssertEqual(summary.firstEntryStartDate, date(2026, 3, 16, 9, 0))
-        XCTAssertEqual(summary.timelineIntervals.count, 3)
-        XCTAssertEqual(summary.timelineIntervals[0].projectName, "Client Work")
-        XCTAssertEqual(summary.timelineIntervals[0].startDate, date(2026, 3, 16, 9, 0))
-        XCTAssertEqual(summary.timelineIntervals[0].endDate, date(2026, 3, 16, 10, 0))
+        XCTAssertEqual(summary.period.startDate, date(2026, 3, 16, 6, 0, 0))
+        XCTAssertEqual(summary.period.endDate, date(2026, 3, 17, 6, 0, 0))
+        XCTAssertEqual(summary.totalDuration, 80 * 60, accuracy: 0.001)
+        XCTAssertEqual(summary.projectSummaries.map(\.projectName), ["Idle", "Admin", "Client Work"])
+        XCTAssertEqual(summary.projectSummaries[0].totalDuration, 50 * 60, accuracy: 0.001)
+        XCTAssertEqual(summary.projectSummaries[1].totalDuration, 15 * 60, accuracy: 0.001)
+        XCTAssertEqual(summary.projectSummaries[2].totalDuration, 15 * 60, accuracy: 0.001)
+        XCTAssertEqual(summary.timelineIntervals.count, 4)
+        XCTAssertEqual(summary.checkIns.count, 4)
+        XCTAssertEqual(summary.allocatedIntervals.count, 4)
     }
 
     @MainActor
-    func testWeeklySummaryFiltersEntriesOutsidePeriod() throws {
-        let referenceDate = date(2026, 3, 18, 8, 0)
+    func testDailySummaryDoesNotCarryIntervalsAcrossCutoff() throws {
         let container = TempoModelContainer.inMemory()
         let context = ModelContext(container)
         let store = AnalyticsStore(modelContext: context)
         let project = ProjectRecord(name: "Deep Work", sortOrder: 0)
         context.insert(project)
-
-        context.insert(entry(project: project, start: date(2026, 3, 16, 9, 0), end: date(2026, 3, 16, 10, 0)))
-        context.insert(entry(project: project, start: date(2026, 3, 18, 13, 0), end: date(2026, 3, 18, 14, 30)))
-        context.insert(entry(project: project, start: date(2026, 3, 22, 15, 0), end: date(2026, 3, 22, 15, 45)))
-        context.insert(entry(project: project, start: date(2026, 3, 23, 9, 0), end: date(2026, 3, 23, 9, 30)))
+        context.insert(idleCheckIn(.doneForDay, at: date(2026, 3, 16, 23, 0, 0)))
+        context.insert(projectCheckIn(project: project, at: date(2026, 3, 17, 8, 0, 0)))
         try context.save()
 
-        let summary = store.summary(range: .week, referenceDate: referenceDate, calendar: testCalendar)
+        let previousDay = store.summary(
+            range: .day,
+            referenceDate: date(2026, 3, 16, 12, 0, 0),
+            calendar: testCalendar,
+            dayCutoffHour: 6
+        )
+        let nextDay = store.summary(
+            range: .day,
+            referenceDate: date(2026, 3, 17, 12, 0, 0),
+            calendar: testCalendar,
+            dayCutoffHour: 6
+        )
 
-        XCTAssertEqual(summary.period.startDate, date(2026, 3, 16, 0, 0))
-        XCTAssertEqual(summary.period.endDate, date(2026, 3, 23, 0, 0))
-        XCTAssertEqual(summary.totalDuration, 11_700, accuracy: 0.001)
-        XCTAssertEqual(summary.projectSummaries.count, 1)
-        XCTAssertEqual(summary.projectSummaries[0].entryCount, 3)
+        XCTAssertEqual(previousDay.totalDuration, 0, accuracy: 0.001)
+        XCTAssertTrue(previousDay.timelineIntervals.isEmpty)
+        XCTAssertEqual(nextDay.totalDuration, 0, accuracy: 0.001)
+        XCTAssertTrue(nextDay.timelineIntervals.isEmpty)
     }
 
     @MainActor
-    func testMonthlySummaryComputesPercentagesFromProjectTotals() throws {
-        let referenceDate = date(2026, 3, 20, 8, 0)
+    func testWeeklySummaryAnchorsPeriodToConfiguredCutoff() throws {
         let container = TempoModelContainer.inMemory()
         let context = ModelContext(container)
         let store = AnalyticsStore(modelContext: context)
-        let client = ProjectRecord(name: "Client Work", sortOrder: 0)
-        let admin = ProjectRecord(name: "Admin", sortOrder: 1)
-        let research = ProjectRecord(name: "Research", sortOrder: 2)
-        context.insert(client)
-        context.insert(admin)
-        context.insert(research)
-
-        context.insert(entry(project: client, start: date(2026, 3, 5, 9, 0), end: date(2026, 3, 5, 10, 0)))
-        context.insert(entry(project: admin, start: date(2026, 3, 7, 10, 0), end: date(2026, 3, 7, 11, 0)))
-        context.insert(entry(project: research, start: date(2026, 3, 9, 12, 0), end: date(2026, 3, 9, 13, 0)))
-        context.insert(entry(project: client, start: date(2026, 3, 12, 9, 0), end: date(2026, 3, 12, 10, 0)))
-        context.insert(entry(project: client, start: date(2026, 2, 27, 9, 0), end: date(2026, 2, 27, 10, 0)))
-        try context.save()
-
-        let summary = store.summary(range: .month, referenceDate: referenceDate, calendar: testCalendar)
-
-        XCTAssertEqual(summary.period.startDate, date(2026, 3, 1, 0, 0))
-        XCTAssertEqual(summary.period.endDate, date(2026, 4, 1, 0, 0))
-        XCTAssertEqual(summary.totalDuration, 14_400, accuracy: 0.001)
-        XCTAssertEqual(summary.projectSummaries.count, 3)
-        XCTAssertEqual(summary.projectSummaries[0].projectName, "Client Work")
-        XCTAssertEqual(summary.projectSummaries[0].percentageOfTotal, 0.5, accuracy: 0.0001)
-        XCTAssertEqual(summary.projectSummaries[1].percentageOfTotal, 0.25, accuracy: 0.0001)
-        XCTAssertEqual(summary.projectSummaries[2].percentageOfTotal, 0.25, accuracy: 0.0001)
-        XCTAssertNil(summary.firstEntryStartDate)
-        XCTAssertTrue(summary.timelineIntervals.isEmpty)
-    }
-
-    @MainActor
-    func testDailySummaryClipsIntervalsToSelectedDay() throws {
-        let now = date(2026, 3, 16, 8, 0)
-        let container = TempoModelContainer.inMemory()
-        let context = ModelContext(container)
-        let store = AnalyticsStore(modelContext: context)
-        let project = ProjectRecord(name: "Overnight", sortOrder: 0)
+        let project = ProjectRecord(name: "Deep Work", sortOrder: 0)
         context.insert(project)
-
-        context.insert(entry(project: project, start: date(2026, 3, 15, 23, 30), end: date(2026, 3, 16, 1, 0)))
-        context.insert(entry(project: project, start: date(2026, 3, 16, 22, 30), end: date(2026, 3, 17, 0, 30)))
+        context.insert(projectCheckIn(project: project, at: date(2026, 3, 16, 8, 0, 0)))
+        context.insert(projectCheckIn(project: project, at: date(2026, 3, 16, 9, 0, 0)))
+        context.insert(projectCheckIn(project: project, at: date(2026, 3, 23, 8, 0, 0)))
+        context.insert(projectCheckIn(project: project, at: date(2026, 3, 23, 9, 0, 0)))
         try context.save()
 
-        let summary = store.summary(range: .day, referenceDate: now, calendar: testCalendar)
+        let summary = store.summary(
+            range: .week,
+            referenceDate: date(2026, 3, 18, 12, 0, 0),
+            calendar: testCalendar,
+            dayCutoffHour: 6
+        )
 
-        XCTAssertEqual(summary.totalDuration, 9_000, accuracy: 0.001)
-        XCTAssertEqual(summary.firstEntryStartDate, date(2026, 3, 16, 0, 0))
-        XCTAssertEqual(summary.timelineIntervals.count, 2)
-        XCTAssertEqual(summary.timelineIntervals[0].startDate, date(2026, 3, 16, 0, 0))
-        XCTAssertEqual(summary.timelineIntervals[0].endDate, date(2026, 3, 16, 1, 0))
-        XCTAssertEqual(summary.timelineIntervals[1].startDate, date(2026, 3, 16, 22, 30))
-        XCTAssertEqual(summary.timelineIntervals[1].endDate, date(2026, 3, 17, 0, 0))
+        XCTAssertEqual(summary.period.startDate, date(2026, 3, 16, 6, 0, 0))
+        XCTAssertEqual(summary.period.endDate, date(2026, 3, 23, 6, 0, 0))
+        XCTAssertEqual(summary.totalDuration, 60 * 60, accuracy: 0.001)
+        XCTAssertEqual(summary.projectSummaries.count, 1)
     }
 
     @MainActor
-    func testSelectingAnalyticsRangeRefreshesAppModelSnapshot() throws {
-        let now = date(2026, 3, 16, 14, 0)
+    func testAppModelUsesConfiguredCutoffForTodaySummary() throws {
+        let now = date(2026, 3, 17, 7, 0, 0)
         let appModel = TempoAppModel(
             modelContainer: TempoModelContainer.inMemory(),
-            clock: FixedAnalyticsClock(now: now)
+            clock: FixedAnalyticsClock(now: now),
+            calendar: testCalendar
         )
         let project = ProjectRecord(name: "Client Work", sortOrder: 0)
         appModel.modelContext.insert(project)
-        appModel.modelContext.insert(entry(project: project, start: date(2026, 3, 16, 9, 0), end: date(2026, 3, 16, 10, 0)))
-        appModel.modelContext.insert(entry(project: project, start: date(2026, 3, 10, 9, 0), end: date(2026, 3, 10, 11, 0)))
+        appModel.settings.analyticsDayCutoffHour = 6
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 17, 5, 30, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 17, 7, 0, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 17, 7, 30, 0)))
         try appModel.modelContext.save()
 
-        appModel.selectAnalyticsRange(.week)
+        appModel.selectAnalyticsRange(.day)
 
-        let expectedInterval = Calendar.current.dateInterval(of: .weekOfYear, for: now)
-
-        XCTAssertEqual(appModel.selectedAnalyticsRange, .week)
-        XCTAssertEqual(appModel.analyticsPeriod.startDate, expectedInterval?.start)
-        XCTAssertEqual(appModel.analyticsPeriod.endDate, expectedInterval?.end)
-        XCTAssertEqual(appModel.analyticsTotalDuration, 3_600, accuracy: 0.001)
+        XCTAssertEqual(appModel.analyticsPeriod.startDate, date(2026, 3, 17, 6, 0, 0))
+        XCTAssertEqual(appModel.analyticsPeriod.endDate, date(2026, 3, 18, 6, 0, 0))
+        XCTAssertEqual(appModel.analyticsTotalDuration, 30 * 60, accuracy: 0.001)
         XCTAssertEqual(appModel.analyticsProjectSummaries.count, 1)
-        XCTAssertEqual(appModel.analyticsTopProjectName, "Client Work")
-        XCTAssertNil(appModel.analyticsFirstEntryStartDate)
-        XCTAssertTrue(appModel.analyticsTimelineIntervals.isEmpty)
+        XCTAssertEqual(appModel.analyticsFirstEntryStartDate, date(2026, 3, 17, 7, 0, 0))
     }
 
-    private func entry(project: ProjectRecord?, start: Date, end: Date) -> TimeEntryRecord {
-        TimeEntryRecord(project: project, startAt: start, endAt: end, source: "check-in")
+    private func projectCheckIn(project: ProjectRecord, at date: Date) -> CheckInRecord {
+        CheckInRecord(
+            timestamp: date,
+            kind: "project",
+            source: "test",
+            project: project
+        )
     }
 
-    private func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int) -> Date {
+    private func idleCheckIn(_ idleKind: TimeAllocationIdleKind, at date: Date) -> CheckInRecord {
+        CheckInRecord(
+            timestamp: date,
+            kind: "idle",
+            source: "test",
+            idleKind: idleKind.rawValue
+        )
+    }
+
+    private func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int, _ second: Int) -> Date {
         var components = DateComponents()
         components.calendar = testCalendar
         components.timeZone = testCalendar.timeZone
@@ -160,6 +146,7 @@ final class AnalyticsAggregationTests: XCTestCase {
         components.day = day
         components.hour = hour
         components.minute = minute
+        components.second = second
         return components.date!
     }
 

@@ -8,6 +8,7 @@ final class ProjectRecord {
     var createdAt: Date
     var sortOrder: Int
 
+    var checkIns: [CheckInRecord]
     var timeEntries: [TimeEntryRecord]
 
     init(
@@ -15,12 +16,14 @@ final class ProjectRecord {
         name: String,
         createdAt: Date = .now,
         sortOrder: Int = 0,
+        checkIns: [CheckInRecord] = [],
         timeEntries: [TimeEntryRecord] = []
     ) {
         self.id = id
         self.name = name
         self.createdAt = createdAt
         self.sortOrder = sortOrder
+        self.checkIns = checkIns
         self.timeEntries = timeEntries
     }
 }

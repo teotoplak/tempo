@@ -122,7 +122,7 @@ final class PollingSchedulerTests: XCTestCase {
         XCTAssertEqual(result.accountableElapsedInterval, 25 * 60)
     }
 
-    func testSilenceUntilEndOfDaySuppressesPrompt() {
+    func testSilenceUntilNextCutoffSuppressesPrompt() {
         let eventDate = Date(timeIntervalSince1970: 1_700_000_000)
         let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: eventDate))
         let settings = AppSettingsRecord()
@@ -138,44 +138,36 @@ final class PollingSchedulerTests: XCTestCase {
             eventDate: eventDate
         )
 
-        let expectedMidnight = Calendar.current.date(
-            byAdding: .day,
-            value: 1,
-            to: Calendar.current.startOfDay(for: eventDate)
-        )
+        let expectedCutoff = nextCutoff(after: eventDate, dayCutoffHour: settings.analyticsDayCutoffHour, calendar: Calendar.current)
 
-        XCTAssertEqual(result.silenceEndsAt, expectedMidnight)
+        XCTAssertEqual(result.silenceEndsAt, expectedCutoff)
         XCTAssertTrue(result.snapshot.isSilenced)
         XCTAssertFalse(result.isPromptOverdue)
         XCTAssertEqual(result.accountableElapsedInterval, 0)
     }
 
-    func testSilenceClearsAtMidnight() {
+    func testSilenceClearsAtConfiguredCutoff() {
         let eventDate = Date(timeIntervalSince1970: 1_700_000_000)
         let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: eventDate))
         let settings = AppSettingsRecord()
-        let midnight = Calendar.current.date(
-            byAdding: .day,
-            value: 1,
-            to: Calendar.current.startOfDay(for: eventDate)
-        )!
+        let cutoff = nextCutoff(after: eventDate, dayCutoffHour: settings.analyticsDayCutoffHour, calendar: Calendar.current)
         let state = SchedulerStateRecord(
             lastCheckInAt: eventDate.addingTimeInterval(-25 * 60),
-            nextCheckInAt: midnight,
+            nextCheckInAt: cutoff,
             lastAppLaunchAt: eventDate,
             silencedAt: eventDate,
-            silenceEndsAt: midnight
+            silenceEndsAt: cutoff
         )
 
         let result = scheduler.updateState(
             state,
             settings: settings,
-            eventDate: midnight
+            eventDate: cutoff
         )
 
         XCTAssertFalse(result.snapshot.isSilenced)
         XCTAssertNil(result.silenceEndsAt)
-        XCTAssertEqual(result.nextCheckInAt, midnight.addingTimeInterval(25 * 60))
+        XCTAssertEqual(result.nextCheckInAt, cutoff.addingTimeInterval(25 * 60))
         XCTAssertEqual(result.accountableElapsedInterval, 25 * 60)
     }
 
@@ -321,27 +313,27 @@ final class PollingSchedulerTests: XCTestCase {
         XCTAssertEqual(result.accountableElapsedInterval, 35 * 60)
     }
 
-    func testSilenceExpiredAcrossMidnightSchedulesFromWakeTime() {
+    func testSilenceExpiredAcrossCutoffSchedulesFromWakeTime() {
         var calendar = fixedSchedulerCalendar()
         calendar.timeZone = TimeZone(secondsFromGMT: 3600) ?? .gmt
-        let midnight = calendar.date(from: DateComponents(
+        let cutoff = calendar.date(from: DateComponents(
             calendar: calendar,
             timeZone: calendar.timeZone,
             year: 2026,
             month: 3,
             day: 16,
-            hour: 0,
+            hour: 6,
             minute: 0
         ))!
-        let eventDate = midnight.addingTimeInterval(45 * 60)
+        let eventDate = cutoff.addingTimeInterval(45 * 60)
         let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: eventDate), calendar: calendar)
         let settings = AppSettingsRecord()
         let state = SchedulerStateRecord(
-            lastCheckInAt: midnight.addingTimeInterval(-(30 * 60)),
-            nextCheckInAt: midnight,
-            lastAppLaunchAt: midnight.addingTimeInterval(-(5 * 60)),
-            silencedAt: midnight.addingTimeInterval(-(2 * 60 * 60)),
-            silenceEndsAt: midnight
+            lastCheckInAt: cutoff.addingTimeInterval(-(30 * 60)),
+            nextCheckInAt: cutoff,
+            lastAppLaunchAt: cutoff.addingTimeInterval(-(5 * 60)),
+            silencedAt: cutoff.addingTimeInterval(-(2 * 60 * 60)),
+            silenceEndsAt: cutoff
         )
 
         let result = scheduler.updateState(state, settings: settings, eventDate: eventDate)
@@ -355,6 +347,13 @@ final class PollingSchedulerTests: XCTestCase {
 
 private struct FixedSchedulerClock: SchedulerClock {
     let now: Date
+}
+
+private func nextCutoff(after date: Date, dayCutoffHour: Int, calendar: Calendar) -> Date {
+    let shiftedDate = calendar.date(byAdding: .hour, value: -dayCutoffHour, to: date) ?? date
+    let shiftedStartOfDay = calendar.startOfDay(for: shiftedDate)
+    let nextShiftedDay = calendar.date(byAdding: .day, value: 1, to: shiftedStartOfDay) ?? shiftedStartOfDay
+    return calendar.date(byAdding: .hour, value: dayCutoffHour, to: nextShiftedDay) ?? nextShiftedDay
 }
 
 private func fixedSchedulerCalendar() -> Calendar {

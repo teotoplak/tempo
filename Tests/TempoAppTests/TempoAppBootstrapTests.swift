@@ -10,6 +10,7 @@ final class TempoAppBootstrapTests: XCTestCase {
         XCTAssertEqual(model.launchState, .launching)
         XCTAssertEqual(model.settings.pollingIntervalMinutes, 25)
         XCTAssertEqual(model.settings.idleThresholdMinutes, 5)
+        XCTAssertEqual(model.settings.analyticsDayCutoffHour, 6)
     }
 
     @MainActor
@@ -121,19 +122,19 @@ final class TempoAppBootstrapTests: XCTestCase {
         let latestProject = try XCTUnwrap(model.recentPromptProjects.first(where: { $0.name == "Beta" }))
         let earlierProject = try XCTUnwrap(model.recentPromptProjects.first(where: { $0.name == "Alpha" }))
         model.modelContext.insert(
-            TimeEntryRecord(
-                project: earlierProject,
-                startAt: now.addingTimeInterval(-(40 * 60)),
-                endAt: now.addingTimeInterval(-(30 * 60)),
-                source: "test"
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(40 * 60)),
+                kind: "project",
+                source: "test",
+                project: earlierProject
             )
         )
         model.modelContext.insert(
-            TimeEntryRecord(
-                project: latestProject,
-                startAt: now.addingTimeInterval(-(20 * 60)),
-                endAt: now.addingTimeInterval(-(10 * 60)),
-                source: "test"
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(10 * 60)),
+                kind: "project",
+                source: "test",
+                project: latestProject
             )
         )
         try model.modelContext.save()
@@ -186,8 +187,7 @@ final class TempoAppBootstrapTests: XCTestCase {
 
         model.refreshCheckInPromptState()
 
-        XCTAssertEqual(model.checkInPromptState.promptTitle, "Resolve idle time")
-        XCTAssertNotEqual(model.checkInPromptState.promptTitle, "What are you currently doing")
+        XCTAssertEqual(model.checkInPromptState.promptTitle, "What are you currently doing")
         XCTAssertEqual(model.pendingIdleReasonDisplayText, "Screen locked")
     }
 

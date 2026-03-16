@@ -34,45 +34,17 @@ final class CheckInPromptPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testStandardPromptSizeIsLargeEnoughForProjectSelection() {
-        XCTAssertEqual(
-            CheckInPromptWindowController.promptSize(for: .hidden),
-            CGSize(width: 360, height: 320)
-        )
-    }
-
-    @MainActor
-    func testIdleResolutionPromptUsesExpandedSize() {
-        let idleState = CheckInPromptState(
+    func testPromptAlwaysUsesStandardSize() {
+        let state = CheckInPromptState(
             isPresented: true,
             elapsedDuration: 0,
             isOverdue: false,
-            promptTitle: "Resolve idle time",
-            supportingSubtitle: "Elapsed 0 min"
+            promptTitle: "What are you currently doing",
+            supportingSubtitle: "Idle detected"
         )
 
-        XCTAssertEqual(
-            CheckInPromptWindowController.promptSize(for: idleState),
-            CGSize(width: 392, height: 420)
-        )
-    }
-
-    @MainActor
-    func testStandardPromptDoesNotUseBackdrop() {
-        XCTAssertFalse(CheckInPromptWindowController.wantsBackdrop(for: .hidden))
-    }
-
-    @MainActor
-    func testIdleResolutionPromptUsesBackdrop() {
-        let idleState = CheckInPromptState(
-            isPresented: true,
-            elapsedDuration: 0,
-            isOverdue: false,
-            promptTitle: "Resolve idle time",
-            supportingSubtitle: "Elapsed 0 min"
-        )
-
-        XCTAssertFalse(CheckInPromptWindowController.wantsBackdrop(for: idleState))
+        XCTAssertEqual(CheckInPromptWindowController.promptSize(for: state), CGSize(width: 360, height: 320))
+        XCTAssertEqual(CheckInPromptWindowController.promptSize(for: .hidden), CGSize(width: 360, height: 320))
     }
 
     @MainActor

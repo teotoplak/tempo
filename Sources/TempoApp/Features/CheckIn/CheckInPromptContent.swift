@@ -6,7 +6,7 @@ struct CheckInPromptContent: View {
     @FocusState private var isSearchFieldFocused: Bool
 
     private var isIdleResolution: Bool {
-        appModel?.isIdlePending == true || state.promptTitle == "Resolve idle time"
+        false
     }
 
     var body: some View {
@@ -56,10 +56,6 @@ struct CheckInPromptContent: View {
 
                 compactProjectListSection
 
-                if isIdleResolution, let appModel {
-                    compactIdleResolutionSection(appModel: appModel)
-                }
-
                 if let appModel, appModel.canCreatePromptProject(named: appModel.promptSearchText) {
                     InlineProjectCreationView(name: appModel.promptSearchText) {
                         createProjectFromPrompt()
@@ -72,7 +68,7 @@ struct CheckInPromptContent: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
 
-                if !isIdleResolution, let appModel {
+                if let appModel {
                     standardPromptFooter(appModel: appModel)
                         .padding(.top, 2)
                 }
@@ -105,43 +101,6 @@ struct CheckInPromptContent: View {
         }
     }
 
-    private func compactIdleResolutionSection(appModel: TempoAppModel) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("\(appModel.pendingIdleReasonDisplayText) interval ready for reconciliation.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    assignIdleButton(appModel: appModel)
-                    discardIdleButton(appModel: appModel)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    assignIdleButton(appModel: appModel)
-                    discardIdleButton(appModel: appModel)
-                }
-            }
-        }
-        .padding(10)
-        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private func assignIdleButton(appModel: TempoAppModel) -> some View {
-        Button("Assign selected project") {
-            try? appModel.assignSelectedPromptProjectForPendingIdle()
-        }
-        .buttonStyle(.borderedProminent)
-        .disabled(appModel.selectedPromptProject == nil)
-    }
-
-    private func discardIdleButton(appModel: TempoAppModel) -> some View {
-        Button("Discard idle block") {
-            try? appModel.discardPendingIdle()
-        }
-        .buttonStyle(.bordered)
-    }
-
     private func standardPromptFooter(appModel: TempoAppModel) -> some View {
         HStack(spacing: 10) {
             Button {
@@ -166,7 +125,7 @@ struct CheckInPromptContent: View {
 
                 Divider()
 
-                Button("Silence for today") {
+                Button("Done for day") {
                     try? appModel.silenceForRestOfDay()
                 }
             } label: {
@@ -191,31 +150,11 @@ struct CheckInPromptContent: View {
     }
 
     private func onProjectTap(_ project: ProjectRecord) {
-        guard let appModel else {
-            return
-        }
-
-        if appModel.isIdlePending {
-            appModel.selectedPromptProjectID = project.id
-            if appModel.idleSplitSecondProjectID == nil {
-                appModel.idleSplitSecondProjectID = project.id
-            }
-            return
-        }
-
-        try? appModel.selectProjectForPrompt(project)
+        try? appModel?.selectProjectForPrompt(project)
     }
 
     private func onProjectDoubleTap(_ project: ProjectRecord) {
-        guard let appModel, appModel.isIdlePending else {
-            return
-        }
-
-        appModel.selectedPromptProjectID = project.id
-        if appModel.idleSplitSecondProjectID == nil {
-            appModel.idleSplitSecondProjectID = project.id
-        }
-        try? appModel.assignSelectedPromptProjectForPendingIdle()
+        try? appModel?.selectProjectForPrompt(project)
     }
 
     private func createProjectFromPrompt() {
@@ -231,10 +170,6 @@ struct CheckInPromptContent: View {
     }
 
     private func focusSearchFieldIfNeeded() {
-        guard !isIdleResolution else {
-            return
-        }
-
         DispatchQueue.main.async {
             isSearchFieldFocused = true
         }

@@ -289,7 +289,7 @@ final class PollingScheduler {
         settings: AppSettingsRecord,
         eventDate: Date
     ) -> PollingSchedulerResult {
-        let silenceEndsAt = nextLocalMidnight(after: eventDate)
+        let silenceEndsAt = nextDayCutoff(after: eventDate, dayCutoffHour: settings.analyticsDayCutoffHour)
 
         return makeResult(
             nextCheckInAt: silenceEndsAt,
@@ -473,9 +473,11 @@ final class PollingScheduler {
         return candidateStarts.max() ?? scheduledCheckInAt.addingTimeInterval(-pollingInterval)
     }
 
-    private func nextLocalMidnight(after date: Date) -> Date {
-        let startOfDay = calendar.startOfDay(for: date)
-        return calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? date
+    private func nextDayCutoff(after date: Date, dayCutoffHour: Int) -> Date {
+        let shiftedDate = calendar.date(byAdding: .hour, value: -dayCutoffHour, to: date) ?? date
+        let shiftedStartOfDay = calendar.startOfDay(for: shiftedDate)
+        let nextShiftedDay = calendar.date(byAdding: .day, value: 1, to: shiftedStartOfDay) ?? shiftedStartOfDay
+        return calendar.date(byAdding: .hour, value: dayCutoffHour, to: nextShiftedDay) ?? nextShiftedDay
     }
 
     private func makeResult(
