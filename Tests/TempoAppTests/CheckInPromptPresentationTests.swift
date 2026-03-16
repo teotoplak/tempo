@@ -99,7 +99,7 @@ final class CheckInPromptPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testDetachedPromptStateHidesWhileMenuBarWindowIsVisible() {
+    func testAttachedPromptControllerDoesNotHidePromptWhenMenuBarWindowIsVisible() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let appModel = TempoAppModel(
             modelContainer: TempoModelContainer.inMemory(),
@@ -107,25 +107,40 @@ final class CheckInPromptPresentationTests: XCTestCase {
             calendar: fixedPresentationCalendar(),
             launchAtLoginController: FixedPresentationLaunchAtLoginController(isEnabled: false)
         )
-        let project = ProjectRecord(name: "Focus", sortOrder: 0)
-        appModel.modelContext.insert(project)
-        appModel.modelContext.insert(
-            CheckInRecord(
-                timestamp: now.addingTimeInterval(-(30 * 60)),
-                kind: "project",
-                source: "check-in",
-                project: project
-            )
+        let controller = CheckInPromptWindowController()
+        appModel.setMenuBarWindowVisible(true)
+        appModel.checkInPromptState = CheckInPromptState(
+            isPresented: true,
+            elapsedDuration: 25 * 60,
+            isOverdue: true,
+            promptTitle: "What are you currently doing",
+            supportingSubtitle: "Elapsed 25 min"
         )
-        try? appModel.modelContext.save()
-        appModel.checkInNow()
+
+        appModel.attachCheckInPromptWindowController(controller)
+
+        XCTAssertTrue(controller.promptWindow?.isVisible ?? false)
+        controller.hide()
+    }
+
+    @MainActor
+    func testInitialLaunchShowsPromptAsSoonAsControllerIsAttached() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedPresentationClock(now: now),
+            calendar: fixedPresentationCalendar(),
+            launchAtLoginController: FixedPresentationLaunchAtLoginController(isEnabled: false)
+        )
+        let controller = CheckInPromptWindowController()
+        appModel.attachCheckInPromptWindowController(controller)
+
+        appModel.performInitialLaunchIfNeeded()
+        appModel.presentCheckInPromptIfNeeded()
 
         XCTAssertTrue(appModel.checkInPromptState.isPresented)
-        XCTAssertTrue(appModel.detachedCheckInPromptState.isPresented)
-
-        appModel.setMenuBarWindowVisible(true)
-
-        XCTAssertFalse(appModel.detachedCheckInPromptState.isPresented)
+        XCTAssertTrue(controller.promptWindow?.isVisible ?? false)
+        controller.hide()
     }
 }
 

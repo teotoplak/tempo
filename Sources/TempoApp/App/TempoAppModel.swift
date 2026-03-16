@@ -250,7 +250,7 @@ final class TempoAppModel {
     func attachCheckInPromptWindowController(_ controller: CheckInPromptWindowController) {
         checkInPromptWindowController = controller
         controller.bind(appModel: self)
-        controller.update(with: detachedCheckInPromptState)
+        controller.update(with: checkInPromptState)
     }
 
     func setMenuBarWindowVisible(_ isVisible: Bool) {
@@ -266,7 +266,7 @@ final class TempoAppModel {
             recoverSchedulerState(eventDate: now, activityDate: activityDate)
         }
 
-        checkInPromptWindowController?.update(with: detachedCheckInPromptState)
+        checkInPromptWindowController?.update(with: checkInPromptState)
     }
 
     func refreshCheckInPromptState() {
@@ -281,19 +281,18 @@ final class TempoAppModel {
             promptTitle: promptTitle,
             supportingSubtitle: supportingSubtitle
         )
-        checkInPromptWindowController?.update(with: detachedCheckInPromptState)
+        checkInPromptWindowController?.update(with: checkInPromptState)
     }
 
     func presentCheckInPromptIfNeeded() {
         refreshCheckInPromptState()
         if checkInPromptState.isPresented,
-           !isMenuBarWindowVisible,
            !isIdlePending,
            promptPresentedAt == nil {
             promptPresentedAt = clock.now
             refreshCheckInPromptState()
         }
-        checkInPromptWindowController?.update(with: detachedCheckInPromptState)
+        checkInPromptWindowController?.update(with: checkInPromptState)
     }
 
     func dismissCheckInPrompt() {
@@ -313,6 +312,15 @@ final class TempoAppModel {
             calendar: calendar,
             dayCutoffHour: settings.analyticsDayCutoffHour
         ).totalDuration
+    }
+
+    func menuBarCountdownMinutesText(at date: Date) -> String? {
+        guard !isSilenced, let nextCheckInAt else {
+            return nil
+        }
+
+        let remainingMinutes = max(Int(nextCheckInAt.timeIntervalSince(date) / 60), 0)
+        return "\(remainingMinutes)"
     }
 
     func menuBarPrimaryStatus(at date: Date) -> String {
@@ -1068,14 +1076,6 @@ final class TempoAppModel {
 
     private var shouldPresentPendingIdlePrompt: Bool {
         isIdlePending && pendingIdleEndedAt != nil
-    }
-
-    var detachedCheckInPromptState: CheckInPromptState {
-        guard !isMenuBarWindowVisible else {
-            return .hidden
-        }
-
-        return checkInPromptState
     }
 
     private func schedulePromptTimerIfNeeded() {

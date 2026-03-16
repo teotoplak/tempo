@@ -11,11 +11,6 @@ struct MenuBarRootView: View {
         GridItem(.flexible(), spacing: 10),
         GridItem(.flexible(), spacing: 10),
     ]
-    private let timelineStatColumns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
-    ]
 
     var body: some View {
         Group {
@@ -269,29 +264,6 @@ struct MenuBarRootView: View {
                     }
                 }
                 .padding(.top, 4)
-
-                Divider()
-                    .padding(.vertical, 2)
-
-                LazyVGrid(columns: timelineStatColumns, alignment: .leading, spacing: 10) {
-                    timelineStat(
-                        icon: "clock",
-                        value: TempoAppModel.formattedTrackedDuration(appModel.menuBarDayTotalDuration),
-                        label: "Tracked"
-                    )
-
-                    timelineStat(
-                        icon: "play.circle",
-                        value: menuBarDayFirstEntryStartText,
-                        label: "Started"
-                    )
-
-                    timelineStat(
-                        icon: "stop.circle",
-                        value: lastTrackedTimeText,
-                        label: "Finished"
-                    )
-                }
             }
 
             Divider()
@@ -351,27 +323,6 @@ struct MenuBarRootView: View {
         }
     }
 
-    private func timelineStat(icon: String, value: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label {
-                Text(value)
-                    .font(.system(size: 12, weight: .semibold))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            } icon: {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
-            }
-            .labelStyle(.titleAndIcon)
-
-            Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
     private func troubleshootingCheckInRow(_ checkIn: TimeAllocationCheckIn) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -409,22 +360,6 @@ struct MenuBarRootView: View {
         }
 
         return summaryDate.formatted(.dateTime.month(.wide).day().year())
-    }
-
-    private var lastTrackedTimeText: String {
-        guard let lastInterval = appModel.menuBarDayTimelineIntervals.max(by: { $0.endDate < $1.endDate }) else {
-            return "No output"
-        }
-
-        return TempoAppModel.formattedClockTime(lastInterval.endDate)
-    }
-
-    private var menuBarDayFirstEntryStartText: String {
-        guard let firstEntryStartDate = appModel.menuBarDayFirstEntryStartDate else {
-            return "No input yet"
-        }
-
-        return TempoAppModel.formattedClockTime(firstEntryStartDate)
     }
 
     private var cardBackground: some ShapeStyle {

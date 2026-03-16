@@ -8,13 +8,16 @@ struct TempoApp: App {
     private let checkInPromptWindowController = CheckInPromptWindowController()
 
     var body: some Scene {
-        MenuBarExtra("Tempo", systemImage: "clock") {
+        MenuBarExtra {
             MenuBarRootView(appModel: appModel)
                 .modelContainer(appModel.modelContainer)
                 .task {
-                    appModel.attachCheckInPromptWindowController(checkInPromptWindowController)
-                    appModel.performInitialLaunchIfNeeded()
-                    appModel.presentCheckInPromptIfNeeded()
+                    bootstrapAppIfNeeded()
+                }
+        } label: {
+            MenuBarLabelView(appModel: appModel)
+                .task {
+                    bootstrapAppIfNeeded()
                 }
         }
         .menuBarExtraStyle(.window)
@@ -24,9 +27,7 @@ struct TempoApp: App {
                 .modelContainer(appModel.modelContainer)
                 .frame(minWidth: 900, minHeight: 560)
                 .task {
-                    appModel.attachCheckInPromptWindowController(checkInPromptWindowController)
-                    appModel.performInitialLaunchIfNeeded()
-                    appModel.presentCheckInPromptIfNeeded()
+                    bootstrapAppIfNeeded()
                 }
         }
         .defaultSize(width: 1080, height: 680)
@@ -35,8 +36,16 @@ struct TempoApp: App {
                 return
             }
 
+            bootstrapAppIfNeeded()
             appModel.handleSceneActivation()
             appModel.presentCheckInPromptIfNeeded()
         }
+    }
+
+    @MainActor
+    private func bootstrapAppIfNeeded() {
+        appModel.attachCheckInPromptWindowController(checkInPromptWindowController)
+        appModel.performInitialLaunchIfNeeded()
+        appModel.presentCheckInPromptIfNeeded()
     }
 }

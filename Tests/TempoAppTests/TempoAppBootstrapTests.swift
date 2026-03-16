@@ -272,10 +272,24 @@ final class TempoAppBootstrapTests: XCTestCase {
         )
 
         XCTAssertTrue(menuSource.contains("No tracked time today"))
-        XCTAssertTrue(menuSource.contains("Tracked"))
-        XCTAssertTrue(menuSource.contains("Started"))
-        XCTAssertTrue(menuSource.contains("Finished"))
         XCTAssertTrue(menuSource.contains("summaryDateTitle"))
+        XCTAssertTrue(menuSource.contains("Troubleshooting check-ins"))
+        XCTAssertFalse(menuSource.contains("label: \"Tracked\""))
+        XCTAssertFalse(menuSource.contains("label: \"Started\""))
+        XCTAssertFalse(menuSource.contains("label: \"Finished\""))
+    }
+
+    func testMenuBarSceneUsesDedicatedLabelView() throws {
+        let rootURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let appSource = try String(
+            contentsOf: rootURL.appendingPathComponent("Sources/TempoApp/App/TempoApp.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(appSource.contains("MenuBarLabelView(appModel: appModel)"))
     }
 
     @MainActor

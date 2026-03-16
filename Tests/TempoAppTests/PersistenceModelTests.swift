@@ -92,6 +92,31 @@ final class PersistenceModelTests: XCTestCase {
         XCTAssertEqual(appModel.accountableElapsedInterval, 5 * 60)
     }
 
+    @MainActor
+    func testMenuBarCountdownMinutesTextUsesMinuteOnlyCountdown() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedPersistenceClock(now: now)
+        )
+        appModel.nextCheckInAt = now.addingTimeInterval((21 * 60) + 45)
+
+        XCTAssertEqual(appModel.menuBarCountdownMinutesText(at: now), "21")
+    }
+
+    @MainActor
+    func testMenuBarCountdownMinutesTextHidesWhileSilenced() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedPersistenceClock(now: now)
+        )
+        appModel.isSilenced = true
+        appModel.nextCheckInAt = now.addingTimeInterval(15 * 60)
+
+        XCTAssertNil(appModel.menuBarCountdownMinutesText(at: now))
+    }
+
     private func projectCheckIn(project: ProjectRecord, at date: Date) -> CheckInRecord {
         CheckInRecord(
             timestamp: date,
