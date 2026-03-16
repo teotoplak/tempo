@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready_to_plan
-stopped_at: Phase 4 executed
-last_updated: "2026-03-16T00:38:00.000Z"
-last_activity: 2026-03-16 — Phase 4 implemented and verified with swift test
+stopped_at: Phase 5 executed
+last_updated: "2026-03-15T23:59:54.000Z"
+last_activity: 2026-03-16 — Phase 5 implemented and verified with swift test
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 16
-  completed_plans: 11
-  percent: 67
+  completed_plans: 14
+  percent: 83
 ---
 
 # Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Tempo must prompt at the correct time and assign time accurately enough that the user can trust the tracking log without manual reconstruction.
-**Current focus:** Phase 5 - Analytics and CSV Export
+**Current focus:** Phase 6 - Launch and Correctness Hardening
 
 ## Current Position
 
-Phase: 5 of 6 (Analytics and CSV Export)
-Plan: 0 of 3 in current phase
-Status: Ready for Phase 5 planning
-Last activity: 2026-03-16 — Phase 4 implemented and verified with swift test
+Phase: 6 of 6 (Launch and Correctness Hardening)
+Plan: 0 of 2 in current phase
+Status: Ready for Phase 6 planning
+Last activity: 2026-03-16 — Phase 5 implemented and verified with swift test
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
-- Average duration: 13 min
-- Total execution time: 2.4 hours
+- Total plans completed: 14
+- Average duration: 12 min
+- Total execution time: 2.9 hours
 
 **By Phase:**
 
@@ -47,10 +47,11 @@ Progress: [███████░░░] 67%
 | 2 | 3 | 40 min | 13 min |
 | 3 | 3 | 21 min | 7 min |
 | 4 | 2 | 22 min | 11 min |
+| 5 | 3 | 32 min | 10 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-01, 03-02, 03-03, 04-01, 04-02
-- Trend: Scheduler timing now excludes unresolved idle periods and requires explicit reconciliation on return
+- Last 5 plans: 04-01, 04-02, 05-01, 05-02, 05-03
+- Trend: Reporting now reuses one analytics snapshot for on-screen review and CSV export, with period-aligned boundaries and export verification
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Recent decisions affecting current work:
 - Phase 3: Derive menu-bar status, current project context, and today's total in TempoAppModel rather than querying persistence directly from the view.
 - Phase 4: Persist unresolved idle intervals in scheduler state so wake, unlock, and relaunch flows all preserve the same reconciliation contract.
 - Phase 4: Force idle resolution through TempoAppModel before normal check-ins resume so ledger writes and scheduler resets stay atomic.
+- Phase 5: Centralize analytics period math in AnalyticsStore so charts, totals, and CSV export share the same boundaries.
+- Phase 5: Route CSV export through TempoAppModel and NSSavePanel so export behavior stays native while the view remains declarative.
 
 ### Pending Todos
 
@@ -80,6 +83,6 @@ None currently recorded.
 
 ## Session Continuity
 
-Last session: 2026-03-16T00:38:00.000Z
-Stopped at: Phase 4 executed
-Resume file: .planning/phases/04-idle-and-locked-screen-reconciliation/04-02-SUMMARY.md
+Last session: 2026-03-15T23:59:54.000Z
+Stopped at: Phase 5 executed
+Resume file: .planning/phases/05-analytics-and-csv-export/05-03-SUMMARY.md

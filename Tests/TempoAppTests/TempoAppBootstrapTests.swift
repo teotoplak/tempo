@@ -135,6 +135,11 @@ final class TempoAppBootstrapTests: XCTestCase {
         XCTAssertTrue(menuSource.contains("Settings"))
         XCTAssertTrue(menuSource.contains("Quit Tempo"))
     }
+
+    @MainActor
+    func testAnalyticsWindowSectionStillExists() {
+        XCTAssertTrue(TempoAppModel.WindowSection.allCases.contains(.analytics))
+    }
 }
 
 private struct FixedBootstrapClock: SchedulerClock {

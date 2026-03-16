@@ -10,7 +10,7 @@ The roadmap starts by establishing a reliable native macOS foundation for local 
 - [x] **Phase 2: Check-In Logging Flow** - Deliver the full-screen prompt and project-based time attribution flow that turns polling into actual tracked entries. (completed 2026-03-15)
 - [x] **Phase 3: Deferrals, Silence, and Menu Bar Control** - Add postponement, silence controls, and menu bar status/actions for daily usability. (completed 2026-03-16)
 - [x] **Phase 4: Idle and Locked-Screen Reconciliation** - Prevent incorrect active tracking during inactivity and let the user resolve idle time explicitly. (completed 2026-03-16)
-- [ ] **Phase 5: Analytics and CSV Export** - Provide reporting views and portable export so tracked data becomes useful for reflection.
+- [x] **Phase 5: Analytics and CSV Export** - Provide reporting views and portable export so tracked data becomes useful for reflection. (completed 2026-03-16)
 - [ ] **Phase 6: Launch and Correctness Hardening** - Finish launch-at-login support and tighten timing and workflow reliability across day boundaries.
 
 ## Phase Details
@@ -86,12 +86,12 @@ Plans:
   1. User can open analytics and inspect time breakdown by project for daily, weekly, monthly, and yearly ranges.
   2. Analytics show totals, percentages, and charts that match the intended Daily Time Tracking-inspired workflow.
   3. Export generates a CSV containing date, start time, end time, duration, and project for each entry.
-**Plans**: 3 plans
+**Plans**: 3/3 plans complete
 
 Plans:
-- [ ] 05-01: Build aggregation queries for analytics periods and project totals.
-- [ ] 05-02: Implement charts and analytics presentation.
-- [ ] 05-03: Implement CSV export from tracked entries.
+- [x] 05-01: Build aggregation queries for analytics periods and project totals.
+- [x] 05-02: Implement charts and analytics presentation.
+- [x] 05-03: Implement CSV export from tracked entries.
 
 ### Phase 6: Launch and Correctness Hardening
 **Goal**: Finish launch-at-login support and harden timing behavior across restarts and edge cases so the app is dependable for daily use.
@@ -118,5 +118,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Check-In Logging Flow | 3/3 | Complete   | 2026-03-15 |
 | 3. Deferrals, Silence, and Menu Bar Control | 3/3 | Complete | 2026-03-16 |
 | 4. Idle and Locked-Screen Reconciliation | 2/2 | Complete | 2026-03-16 |
-| 5. Analytics and CSV Export | 0/3 | Not started | - |
+| 5. Analytics and CSV Export | 3/3 | Complete | 2026-03-16 |
 | 6. Launch and Correctness Hardening | 0/2 | Not started | - |

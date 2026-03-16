@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Observation
 import SwiftData
+import UniformTypeIdentifiers
 
 protocol ProjectStore: AnyObject {}
 protocol SettingsStore: AnyObject {}
@@ -89,10 +90,19 @@ final class TempoAppModel {
     var idleSplitSecondProjectID: UUID?
     var checkInPromptState = CheckInPromptState.hidden
     var promptSearchText = ""
+    var selectedAnalyticsRange: AnalyticsRange = .day
+    var analyticsPeriod: AnalyticsPeriod
+    var analyticsTotalDuration: TimeInterval = 0
+    var analyticsProjectSummaries: [AnalyticsProjectSummary] = []
+    var analyticsTopProjectName: String?
+    var analyticsExportStatusMessage: String?
+    var analyticsExportErrorMessage: String?
 
     private let clock: any SchedulerClock
     private let scheduler: PollingScheduler
     private let schedulerStateStore: SchedulerStateStore
+    private let analyticsStore: AnalyticsStore
+    private let csvExportService: CSVExportService
     private var hasHandledInitialLaunch = false
     private var workspaceObservers: [NSObjectProtocol] = []
     private var checkInPromptWindowController: CheckInPromptWindowController?
@@ -106,6 +116,11 @@ final class TempoAppModel {
         self.modelContext = ModelContext(resolvedContainer)
         self.clock = clock
         self.scheduler = PollingScheduler(clock: clock)
+        self.analyticsPeriod = AnalyticsPeriod(
+            startDate: clock.now,
+            endDate: clock.now,
+            label: clock.now.formatted(date: .abbreviated, time: .omitted)
+        )
 
         let settingsFetch = FetchDescriptor<AppSettingsRecord>()
         let schedulerFetch = FetchDescriptor<SchedulerStateRecord>()
@@ -132,11 +147,14 @@ final class TempoAppModel {
 
         let schedulerStateStore = SchedulerStateStore(modelContext: self.modelContext)
         self.schedulerStateStore = schedulerStateStore
+        self.analyticsStore = AnalyticsStore(modelContext: self.modelContext)
+        self.csvExportService = CSVExportService(modelContext: self.modelContext, calendar: .current)
         self.settingsStore = LocalSettingsStore(record: self.settings)
         self.schedulerStore = schedulerStateStore
         self.projectStore = LocalProjectStore(modelContext: self.modelContext)
 
         apply(snapshot: scheduler.snapshot(for: self.schedulerStateRecord, settings: self.settings, eventDate: clock.now))
+        refreshAnalytics(referenceDate: clock.now)
         refreshCheckInPromptState()
     }
 
@@ -148,6 +166,7 @@ final class TempoAppModel {
         hasHandledInitialLaunch = true
         observeWorkspaceWake()
         handleSchedulerTransition(eventDate: clock.now)
+        refreshAnalytics(referenceDate: clock.now)
     }
 
     func handleSceneActivation() {
@@ -289,6 +308,20 @@ final class TempoAppModel {
         Self.idleSupportingSubtitle(duration: pendingIdleDuration, reason: pendingIdleReasonLabel)
     }
 
+    var analyticsTotalDurationText: String {
+        Self.formattedTrackedDuration(analyticsTotalDuration)
+    }
+
+    var analyticsTopProjectSummaryText: String {
+        guard
+            let topProject = analyticsProjectSummaries.first
+        else {
+            return "No tracked time"
+        }
+
+        return "\(topProject.projectName) · \(Self.formattedTrackedDuration(topProject.totalDuration))"
+    }
+
     var selectedPromptProject: ProjectRecord? {
         guard let selectedPromptProjectID else {
             return nil
@@ -365,6 +398,11 @@ final class TempoAppModel {
         _ = try createProjectRecord(named: name)
     }
 
+    func selectAnalyticsRange(_ range: AnalyticsRange) {
+        selectedAnalyticsRange = range
+        refreshAnalytics(referenceDate: clock.now)
+    }
+
     func selectProjectForPrompt(_ project: ProjectRecord) throws {
         if isIdlePending {
             try assignPendingIdle(to: project)
@@ -392,6 +430,7 @@ final class TempoAppModel {
         try schedulerStateStore.save(schedulerStateRecord)
 
         apply(snapshot: completionResult.snapshot)
+        refreshAnalytics(referenceDate: completionDate)
         promptSearchText = ""
         refreshCheckInPromptState()
         dismissCheckInPrompt()
@@ -485,6 +524,7 @@ final class TempoAppModel {
             )
         )
         try completePendingIdleResolution()
+        refreshAnalytics(referenceDate: clock.now)
     }
 
     func discardPendingIdle() throws {
@@ -493,6 +533,7 @@ final class TempoAppModel {
         }
 
         try completePendingIdleResolution()
+        refreshAnalytics(referenceDate: clock.now)
     }
 
     func splitPendingIdle(
@@ -534,6 +575,7 @@ final class TempoAppModel {
         )
 
         try completePendingIdleResolution()
+        refreshAnalytics(referenceDate: clock.now)
     }
 
     func detectInactivityIfNeeded(activityDate: Date) {
@@ -602,6 +644,7 @@ final class TempoAppModel {
     func renameProject(_ project: ProjectRecord, to newName: String) throws {
         project.name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         try modelContext.save()
+        refreshAnalytics(referenceDate: clock.now)
     }
 
     func deleteProject(_ project: ProjectRecord) throws {
@@ -616,6 +659,44 @@ final class TempoAppModel {
     func saveSettings() throws {
         try modelContext.save()
         handleSchedulerTransition(eventDate: clock.now)
+    }
+
+    func refreshAnalytics(referenceDate: Date) {
+        let snapshot = analyticsStore.summary(
+            range: selectedAnalyticsRange,
+            referenceDate: referenceDate,
+            calendar: .current
+        )
+        analyticsPeriod = snapshot.period
+        analyticsTotalDuration = snapshot.totalDuration
+        analyticsProjectSummaries = snapshot.projectSummaries
+        analyticsTopProjectName = snapshot.topProjectName
+    }
+
+    func exportAnalyticsCSV() {
+        analyticsExportStatusMessage = nil
+        analyticsExportErrorMessage = nil
+
+        let savePanel = NSSavePanel()
+        savePanel.nameFieldStringValue = "tempo-analytics.csv"
+        savePanel.allowedContentTypes = [.commaSeparatedText]
+        savePanel.canCreateDirectories = true
+        savePanel.isExtensionHidden = false
+
+        guard savePanel.runModal() == .OK, let destinationURL = savePanel.url else {
+            return
+        }
+
+        do {
+            let csv = csvExportService.csvString(
+                range: selectedAnalyticsRange,
+                referenceDate: clock.now
+            )
+            try csv.write(to: destinationURL, atomically: true, encoding: .utf8)
+            analyticsExportStatusMessage = "CSV exported"
+        } catch {
+            analyticsExportErrorMessage = error.localizedDescription
+        }
     }
 
     private func nextProjectSortOrder() -> Int {
