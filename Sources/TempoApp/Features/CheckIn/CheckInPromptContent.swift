@@ -6,7 +6,7 @@ struct CheckInPromptContent: View {
     @FocusState private var isSearchFieldFocused: Bool
 
     private var isIdleResolution: Bool {
-        false
+        appModel?.isIdlePending ?? false
     }
 
     var body: some View {
@@ -42,16 +42,12 @@ struct CheckInPromptContent: View {
                             submitPromptSearch()
                         }
 
-                    Button {
-                    } label: {
-                        Image(systemName: "questionmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 18, height: 18)
-                            .background(controlBackground, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Select an existing project or create one from what you type.")
+                    Image(systemName: "questionmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .background(controlBackground, in: Circle())
+                        .help("Select an existing project or create one from what you type.")
                 }
 
                 compactProjectListSection

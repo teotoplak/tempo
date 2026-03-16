@@ -4,10 +4,6 @@ import Observation
 import SwiftData
 import UniformTypeIdentifiers
 
-protocol ProjectStore: AnyObject {}
-protocol SettingsStore: AnyObject {}
-protocol SchedulerStore: AnyObject {}
-
 struct CheckInPromptState: Equatable {
     var isPresented: Bool
     var elapsedDuration: TimeInterval
@@ -38,14 +34,11 @@ struct DerivedRuntimeState: Equatable {
 
 enum IdleResolutionError: LocalizedError {
     case noPendingIdle
-    case invalidSplitDuration
 
     var errorDescription: String? {
         switch self {
         case .noPendingIdle:
             return "No pending idle interval is available."
-        case .invalidSplitDuration:
-            return "The first segment must be greater than zero and shorter than the full idle interval."
         }
     }
 }
@@ -79,9 +72,6 @@ final class TempoAppModel {
 
     var selectedWindow: WindowSection = .projects
     var launchState: LaunchState = .launching
-    var projectStore: (any ProjectStore)?
-    var settingsStore: (any SettingsStore)?
-    var schedulerStore: (any SchedulerStore)?
 
     var settings: AppSettingsRecord
     var schedulerStateRecord: SchedulerStateRecord
@@ -96,22 +86,16 @@ final class TempoAppModel {
     var pendingIdleReason: String?
     var pendingIdleDuration: TimeInterval = 0
     var selectedPromptProjectID: UUID?
-    var idleSplitFirstDurationMinutes = 1
-    var idleSplitSecondProjectID: UUID?
     var checkInPromptState = CheckInPromptState.hidden
     var promptSearchText = ""
     var selectedAnalyticsRange: AnalyticsRange = .day
     var analyticsPeriod: AnalyticsPeriod
     var analyticsTotalDuration: TimeInterval = 0
     var analyticsProjectSummaries: [AnalyticsProjectSummary] = []
-    var analyticsTopProjectName: String?
     var analyticsFirstEntryStartDate: Date?
     var analyticsTimelineIntervals: [AnalyticsTimelineInterval] = []
     var menuBarDayPeriod: AnalyticsPeriod
-    var menuBarDayTotalDuration: TimeInterval = 0
     var menuBarDayProjectSummaries: [AnalyticsProjectSummary] = []
-    var menuBarDayFirstEntryStartDate: Date?
-    var menuBarDayTimelineIntervals: [AnalyticsTimelineInterval] = []
     var menuBarDayCheckIns: [TimeAllocationCheckIn] = []
     var analyticsExportStatusMessage: String?
     var analyticsExportErrorMessage: String?
@@ -123,8 +107,6 @@ final class TempoAppModel {
 
     private let clock: any SchedulerClock
     private let calendar: Calendar
-    private let scheduler: PollingScheduler
-    private let schedulerStateStore: SchedulerStateStore
     private let analyticsStore: AnalyticsStore
     private let csvExportService: CSVExportService
     private let launchAtLoginController: any LaunchAtLoginControlling
@@ -145,7 +127,6 @@ final class TempoAppModel {
         self.clock = clock
         self.calendar = calendar
         self.launchAtLoginController = launchAtLoginController
-        self.scheduler = PollingScheduler(clock: clock, calendar: calendar)
         self.analyticsPeriod = AnalyticsPeriod(
             startDate: clock.now,
             endDate: clock.now,
@@ -180,13 +161,8 @@ final class TempoAppModel {
             try? self.modelContext.save()
         }
 
-        let schedulerStateStore = SchedulerStateStore(modelContext: self.modelContext)
-        self.schedulerStateStore = schedulerStateStore
         self.analyticsStore = AnalyticsStore(modelContext: self.modelContext)
         self.csvExportService = CSVExportService(modelContext: self.modelContext, calendar: calendar)
-        self.settingsStore = LocalSettingsStore(record: self.settings)
-        self.schedulerStore = schedulerStateStore
-        self.projectStore = LocalProjectStore(modelContext: self.modelContext)
         self.launchAtLoginEnabled = launchAtLoginController.isEnabled
         self.lastSavedPollingIntervalMinutes = self.settings.pollingIntervalMinutes
 
@@ -390,21 +366,8 @@ final class TempoAppModel {
         return fetchProjects().first { $0.id == selectedPromptProjectID }
     }
 
-    var idleSplitSecondProject: ProjectRecord? {
-        guard let idleSplitSecondProjectID else {
-            return nil
-        }
-
-        return fetchProjects().first { $0.id == idleSplitSecondProjectID }
-    }
-
     var pendingIdleReasonDisplayText: String {
         pendingIdleReasonLabel
-    }
-
-    var firstIdleSegmentMinutesRange: ClosedRange<Int> {
-        let totalMinutes = max(Int(pendingIdleDuration / 60), 0)
-        return 1...max(totalMinutes - 1, 1)
     }
 
     var recentPromptProjects: [ProjectRecord] {
@@ -482,14 +445,6 @@ final class TempoAppModel {
         }
     }
 
-    func assignSelectedPromptProjectForPendingIdle() throws {
-        guard let selectedPromptProject else {
-            return
-        }
-
-        try assignPendingIdle(to: selectedPromptProject)
-    }
-
     func createProject(named name: String) throws {
         _ = try createProjectRecord(named: name)
     }
@@ -520,7 +475,6 @@ final class TempoAppModel {
         let project = try createProjectRecord(named: name)
         if isIdlePending {
             selectedPromptProjectID = project.id
-            idleSplitSecondProjectID = project.id
             promptSearchText = ""
             refreshCheckInPromptState()
             return
@@ -590,27 +544,6 @@ final class TempoAppModel {
         refreshAnalytics(referenceDate: clock.now)
     }
 
-    func splitPendingIdle(
-        firstProject: ProjectRecord,
-        firstDurationMinutes: Int,
-        secondProject: ProjectRecord
-    ) throws {
-        guard let pendingIdleStartedAt, let pendingIdleEndedAt else {
-            throw IdleResolutionError.noPendingIdle
-        }
-
-        let totalSeconds = pendingIdleEndedAt.timeIntervalSince(pendingIdleStartedAt)
-        let firstDuration = TimeInterval(firstDurationMinutes * 60)
-        guard firstDuration > 0, firstDuration < totalSeconds else {
-            throw IdleResolutionError.invalidSplitDuration
-        }
-
-        persistProjectCheckIn(secondProject, at: clock.now, source: "idle-return")
-        try modelContext.save()
-        refreshRuntimeState(eventDate: clock.now, activityDate: clock.now)
-        refreshAnalytics(referenceDate: clock.now)
-    }
-
     func handleScreenLock() {
         guard latestCheckInRecord()?.kind != "idle" else {
             refreshRuntimeState(eventDate: clock.now)
@@ -634,15 +567,6 @@ final class TempoAppModel {
         refreshRuntimeState(eventDate: clock.now, activityDate: clock.now)
         refreshCheckInPromptState()
         presentCheckInPromptIfNeeded()
-    }
-
-    @discardableResult
-    private func resolvePendingIdleIfActivityResumed(activityDate: Date, referenceDate: Date) -> Bool {
-        let priorEndedAt = pendingIdleEndedAt
-        refreshRuntimeState(eventDate: referenceDate, activityDate: activityDate)
-        refreshCheckInPromptState()
-        presentCheckInPromptIfNeeded()
-        return isIdlePending && pendingIdleEndedAt != priorEndedAt
     }
 
     func renameProject(_ project: ProjectRecord, to newName: String) throws {
@@ -695,14 +619,10 @@ final class TempoAppModel {
         analyticsPeriod = snapshot.period
         analyticsTotalDuration = snapshot.totalDuration
         analyticsProjectSummaries = snapshot.projectSummaries
-        analyticsTopProjectName = snapshot.topProjectName
         analyticsFirstEntryStartDate = snapshot.firstEntryStartDate
         analyticsTimelineIntervals = snapshot.timelineIntervals
         menuBarDayPeriod = daySnapshot.period
-        menuBarDayTotalDuration = daySnapshot.totalDuration
         menuBarDayProjectSummaries = daySnapshot.projectSummaries
-        menuBarDayFirstEntryStartDate = daySnapshot.firstEntryStartDate
-        menuBarDayTimelineIntervals = daySnapshot.timelineIntervals
         menuBarDayCheckIns = daySnapshot.checkIns
     }
 
@@ -821,18 +741,12 @@ final class TempoAppModel {
 
         if filteredProjects.isEmpty {
             selectedPromptProjectID = preferredPromptProject()?.id
-            if isIdlePending {
-                idleSplitSecondProjectID = selectedPromptProjectID
-            }
             return
         }
 
         if trimmedQuery.isEmpty {
             let preferredProjectID = preferredPromptProject()?.id ?? filteredProjects.first?.id
             selectedPromptProjectID = preferredProjectID
-            if isIdlePending {
-                idleSplitSecondProjectID = preferredProjectID
-            }
             return
         }
 
@@ -840,9 +754,6 @@ final class TempoAppModel {
             project.name.compare(trimmedQuery, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
         }) {
             selectedPromptProjectID = exactMatch.id
-            if isIdlePending {
-                idleSplitSecondProjectID = exactMatch.id
-            }
             return
         }
 
@@ -851,9 +762,6 @@ final class TempoAppModel {
         }
 
         selectedPromptProjectID = filteredProjects.first?.id
-        if isIdlePending {
-            idleSplitSecondProjectID = filteredProjects.first?.id
-        }
     }
 
     private func ensureIdleSelectionDefaults() {
@@ -865,18 +773,6 @@ final class TempoAppModel {
 
         if selectedPromptProject == nil {
             selectedPromptProjectID = preferredPromptProject(in: projects)?.id
-        }
-
-        if idleSplitSecondProject == nil {
-            idleSplitSecondProjectID = preferredPromptProject(in: projects)?.id
-        }
-
-        let totalMinutes = max(Int(pendingIdleDuration / 60), 0)
-        if totalMinutes > 1 {
-            let clamped = min(max(idleSplitFirstDurationMinutes, 1), totalMinutes - 1)
-            idleSplitFirstDurationMinutes = clamped
-        } else {
-            idleSplitFirstDurationMinutes = 1
         }
     }
 
@@ -1056,8 +952,6 @@ final class TempoAppModel {
         }
         if !runtimeState.isIdlePending {
             selectedPromptProjectID = nil
-            idleSplitSecondProjectID = nil
-            idleSplitFirstDurationMinutes = 1
         }
 
         schedulePromptTimerIfNeeded()
@@ -1251,24 +1145,6 @@ final class TempoAppModel {
         reason: String
     ) -> String {
         "\(reason) for \(formattedCompactDuration(duration))"
-    }
-}
-
-@MainActor
-final class LocalProjectStore: ProjectStore {
-    let modelContext: ModelContext
-
-    init(modelContext: ModelContext) {
-        self.modelContext = modelContext
-    }
-}
-
-@MainActor
-final class LocalSettingsStore: SettingsStore {
-    let record: AppSettingsRecord
-
-    init(record: AppSettingsRecord) {
-        self.record = record
     }
 }
 

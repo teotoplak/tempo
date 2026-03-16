@@ -69,7 +69,6 @@ final class AnalyticsStore {
             period: allocationSummary.period,
             totalDuration: allocationSummary.totalDuration,
             projectSummaries: projectSummaries,
-            topProjectName: projectSummaries.first?.projectName,
             firstEntryStartDate: range == .day ? allocationSummary.firstAllocatedIntervalStartDate : nil,
             checkIns: allocationSummary.checkIns,
             allocatedIntervals: allocationSummary.allocatedIntervals,

@@ -54,7 +54,6 @@ struct AnalyticsSummarySnapshot: Equatable {
     let period: AnalyticsPeriod
     let totalDuration: TimeInterval
     let projectSummaries: [AnalyticsProjectSummary]
-    let topProjectName: String?
     let firstEntryStartDate: Date?
     let checkIns: [TimeAllocationCheckIn]
     let allocatedIntervals: [TimeAllocationInterval]
