@@ -140,8 +140,67 @@ final class TempoAppBootstrapTests: XCTestCase {
     func testAnalyticsWindowSectionStillExists() {
         XCTAssertTrue(TempoAppModel.WindowSection.allCases.contains(.analytics))
     }
+
+    @MainActor
+    func testPerformInitialLaunchRecoversExpiredSilenceState() {
+        let now = Date(timeIntervalSince1970: 1_700_006_000)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now),
+            calendar: fixedBootstrapCalendar(),
+            launchAtLoginController: FixedLaunchAtLoginController(isEnabled: false)
+        )
+        model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(3 * 60 * 60))
+        model.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(-(2 * 60 * 60))
+        model.schedulerStateRecord.silencedAt = now.addingTimeInterval(-(4 * 60 * 60))
+        model.schedulerStateRecord.silenceEndsAt = now.addingTimeInterval(-(90 * 60))
+
+        model.performInitialLaunchIfNeeded()
+
+        XCTAssertFalse(model.isSilenced)
+        XCTAssertNil(model.silenceEndsAt)
+        XCTAssertEqual(model.nextCheckInAt, now.addingTimeInterval(25 * 60))
+        XCTAssertEqual(model.accountableElapsedInterval, 25 * 60)
+    }
+
+    @MainActor
+    func testHandleSceneActivationRecoversOverduePromptAfterRelaunch() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now),
+            calendar: fixedBootstrapCalendar(),
+            launchAtLoginController: FixedLaunchAtLoginController(isEnabled: true)
+        )
+        model.settings.idleThresholdMinutes = 10_000
+        model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(4 * 60 * 60))
+        model.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(-(2 * 60 * 60))
+        model.schedulerStateRecord.lastAppLaunchAt = now.addingTimeInterval(-(40 * 60))
+
+        model.handleSceneActivation()
+
+        XCTAssertTrue(model.isPromptOverdue)
+        XCTAssertEqual(model.accountableElapsedInterval, 40 * 60)
+    }
 }
 
 private struct FixedBootstrapClock: SchedulerClock {
     let now: Date
+}
+
+@MainActor
+private final class FixedLaunchAtLoginController: LaunchAtLoginControlling {
+    let isEnabled: Bool
+
+    init(isEnabled: Bool) {
+        self.isEnabled = isEnabled
+    }
+
+    func setEnabled(_ enabled: Bool) throws {}
+}
+
+private func fixedBootstrapCalendar() -> Calendar {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .gmt
+    return calendar
 }

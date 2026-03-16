@@ -101,11 +101,11 @@ Plans:
   1. User can enable or disable launch at login from settings.
   2. Polling, silence reset, and elapsed-time calculations recover correctly across app relaunches and date boundaries.
   3. The end-to-end workflow is stable enough for daily personal use without manual bookkeeping workarounds.
-**Plans**: 2 plans
+**Plans**: 2/2 plans complete
 
 Plans:
-- [ ] 06-01: Implement launch-at-login integration and settings wiring.
-- [ ] 06-02: Validate and harden scheduler correctness across restart and midnight edge cases.
+- [x] 06-01: Implement launch-at-login integration and settings wiring.
+- [x] 06-02: Validate and harden scheduler correctness across restart and midnight edge cases.
 
 ## Progress
 
@@ -119,4 +119,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Deferrals, Silence, and Menu Bar Control | 3/3 | Complete | 2026-03-16 |
 | 4. Idle and Locked-Screen Reconciliation | 2/2 | Complete | 2026-03-16 |
 | 5. Analytics and CSV Export | 3/3 | Complete | 2026-03-16 |
-| 6. Launch and Correctness Hardening | 0/2 | Not started | - |
+| 6. Launch and Correctness Hardening | 2/2 | In Progress | - |

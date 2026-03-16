@@ -49,7 +49,7 @@ final class PollingSchedulerTests: XCTestCase {
 
         XCTAssertEqual(result.nextCheckInAt, overdueCheckInAt)
         XCTAssertTrue(result.isPromptOverdue)
-        XCTAssertEqual(result.accountableElapsedInterval, 35 * 60)
+        XCTAssertEqual(result.accountableElapsedInterval, 25 * 60)
     }
 
     func testCompleteCheckInSchedulesFromCompletionDate() {
@@ -119,7 +119,7 @@ final class PollingSchedulerTests: XCTestCase {
         XCTAssertTrue(result.isPromptOverdue)
         XCTAssertFalse(result.snapshot.isPromptDelayed)
         XCTAssertNil(result.delayedUntilAt)
-        XCTAssertEqual(result.accountableElapsedInterval, 45 * 60)
+        XCTAssertEqual(result.accountableElapsedInterval, 25 * 60)
     }
 
     func testSilenceUntilEndOfDaySuppressesPrompt() {
@@ -284,8 +284,81 @@ final class PollingSchedulerTests: XCTestCase {
         XCTAssertNil(result.nextCheckInAt)
         XCTAssertEqual(result.idleResolvedAt, now)
     }
+
+    func testOverdueRelaunchClampsElapsedToLastLaunchAt() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: now), calendar: fixedSchedulerCalendar())
+        let settings = AppSettingsRecord()
+        let state = SchedulerStateRecord(
+            lastCheckInAt: now.addingTimeInterval(-(4 * 60 * 60)),
+            nextCheckInAt: now.addingTimeInterval(-(2 * 60 * 60)),
+            lastAppLaunchAt: now.addingTimeInterval(-(40 * 60))
+        )
+
+        let result = scheduler.updateState(state, settings: settings, eventDate: now)
+
+        XCTAssertTrue(result.isPromptOverdue)
+        XCTAssertEqual(result.accountableElapsedInterval, 40 * 60)
+    }
+
+    func testDelayedPromptAfterRelaunchUsesLastLaunchAsReferenceStart() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let delayedUntilAt = now.addingTimeInterval(-(10 * 60))
+        let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: now), calendar: fixedSchedulerCalendar())
+        let settings = AppSettingsRecord()
+        let state = SchedulerStateRecord(
+            lastCheckInAt: now.addingTimeInterval(-(3 * 60 * 60)),
+            nextCheckInAt: delayedUntilAt,
+            lastAppLaunchAt: now.addingTimeInterval(-(35 * 60)),
+            delayedUntilAt: delayedUntilAt,
+            delayedFromPromptAt: now.addingTimeInterval(-(50 * 60))
+        )
+
+        let result = scheduler.updateState(state, settings: settings, eventDate: now)
+
+        XCTAssertTrue(result.isPromptOverdue)
+        XCTAssertFalse(result.snapshot.isPromptDelayed)
+        XCTAssertEqual(result.accountableElapsedInterval, 35 * 60)
+    }
+
+    func testSilenceExpiredAcrossMidnightSchedulesFromWakeTime() {
+        var calendar = fixedSchedulerCalendar()
+        calendar.timeZone = TimeZone(secondsFromGMT: 3600) ?? .gmt
+        let midnight = calendar.date(from: DateComponents(
+            calendar: calendar,
+            timeZone: calendar.timeZone,
+            year: 2026,
+            month: 3,
+            day: 16,
+            hour: 0,
+            minute: 0
+        ))!
+        let eventDate = midnight.addingTimeInterval(45 * 60)
+        let scheduler = PollingScheduler(clock: FixedSchedulerClock(now: eventDate), calendar: calendar)
+        let settings = AppSettingsRecord()
+        let state = SchedulerStateRecord(
+            lastCheckInAt: midnight.addingTimeInterval(-(30 * 60)),
+            nextCheckInAt: midnight,
+            lastAppLaunchAt: midnight.addingTimeInterval(-(5 * 60)),
+            silencedAt: midnight.addingTimeInterval(-(2 * 60 * 60)),
+            silenceEndsAt: midnight
+        )
+
+        let result = scheduler.updateState(state, settings: settings, eventDate: eventDate)
+
+        XCTAssertFalse(result.snapshot.isSilenced)
+        XCTAssertNil(result.silenceEndsAt)
+        XCTAssertEqual(result.nextCheckInAt, eventDate.addingTimeInterval(25 * 60))
+        XCTAssertEqual(result.accountableElapsedInterval, 25 * 60)
+    }
 }
 
 private struct FixedSchedulerClock: SchedulerClock {
     let now: Date
+}
+
+private func fixedSchedulerCalendar() -> Calendar {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .gmt
+    return calendar
 }

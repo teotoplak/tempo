@@ -101,6 +101,7 @@ final class TempoAppModel {
     var launchAtLoginErrorMessage: String?
 
     private let clock: any SchedulerClock
+    private let calendar: Calendar
     private let scheduler: PollingScheduler
     private let schedulerStateStore: SchedulerStateStore
     private let analyticsStore: AnalyticsStore
@@ -113,14 +114,16 @@ final class TempoAppModel {
     init(
         modelContainer: ModelContainer? = nil,
         clock: any SchedulerClock = SystemSchedulerClock(),
+        calendar: Calendar = .current,
         launchAtLoginController: any LaunchAtLoginControlling = SMAppServiceLaunchAtLoginController()
     ) {
         let resolvedContainer = modelContainer ?? TempoModelContainer.live()
         self.modelContainer = resolvedContainer
         self.modelContext = ModelContext(resolvedContainer)
         self.clock = clock
+        self.calendar = calendar
         self.launchAtLoginController = launchAtLoginController
-        self.scheduler = PollingScheduler(clock: clock)
+        self.scheduler = PollingScheduler(clock: clock, calendar: calendar)
         self.analyticsPeriod = AnalyticsPeriod(
             startDate: clock.now,
             endDate: clock.now,
@@ -153,7 +156,7 @@ final class TempoAppModel {
         let schedulerStateStore = SchedulerStateStore(modelContext: self.modelContext)
         self.schedulerStateStore = schedulerStateStore
         self.analyticsStore = AnalyticsStore(modelContext: self.modelContext)
-        self.csvExportService = CSVExportService(modelContext: self.modelContext, calendar: .current)
+        self.csvExportService = CSVExportService(modelContext: self.modelContext, calendar: calendar)
         self.settingsStore = LocalSettingsStore(record: self.settings)
         self.schedulerStore = schedulerStateStore
         self.projectStore = LocalProjectStore(modelContext: self.modelContext)
@@ -172,7 +175,7 @@ final class TempoAppModel {
         hasHandledInitialLaunch = true
         observeWorkspaceWake()
         syncLaunchAtLoginPreferenceFromSystem()
-        handleSchedulerTransition(eventDate: clock.now)
+        recoverSchedulerState(eventDate: clock.now)
         refreshAnalytics(referenceDate: clock.now)
     }
 
@@ -209,7 +212,7 @@ final class TempoAppModel {
             return
         }
 
-        handleSchedulerTransition(eventDate: now)
+        recoverSchedulerState(eventDate: now)
     }
 
     func handleAppWake() {
@@ -225,7 +228,7 @@ final class TempoAppModel {
             return
         }
 
-        handleSchedulerTransition(eventDate: now)
+        recoverSchedulerState(eventDate: now)
     }
 
     func quit() {
@@ -277,7 +280,6 @@ final class TempoAppModel {
     }
 
     var todaysTrackedDuration: TimeInterval {
-        let calendar = Calendar.current
         let targetDay = calendar.startOfDay(for: clock.now)
         let descriptor = FetchDescriptor<TimeEntryRecord>(sortBy: [SortDescriptor(\.endAt, order: .reverse)])
         let entries = (try? modelContext.fetch(descriptor)) ?? []
@@ -690,14 +692,14 @@ final class TempoAppModel {
 
     func saveSettings() throws {
         try modelContext.save()
-        handleSchedulerTransition(eventDate: clock.now)
+        recoverSchedulerState(eventDate: clock.now)
     }
 
     func refreshAnalytics(referenceDate: Date) {
         let snapshot = analyticsStore.summary(
             range: selectedAnalyticsRange,
             referenceDate: referenceDate,
-            calendar: .current
+            calendar: calendar
         )
         analyticsPeriod = snapshot.period
         analyticsTotalDuration = snapshot.totalDuration
@@ -863,7 +865,7 @@ final class TempoAppModel {
         })
     }
 
-    private func handleSchedulerTransition(eventDate: Date) {
+    func recoverSchedulerState(eventDate: Date) {
         let result = scheduler.updateState(
             schedulerStateRecord,
             settings: settings,

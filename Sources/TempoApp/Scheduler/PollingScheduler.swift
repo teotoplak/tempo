@@ -37,9 +37,11 @@ struct PollingSchedulerResult {
 
 final class PollingScheduler {
     private let clock: any SchedulerClock
+    private let calendar: Calendar
 
-    init(clock: any SchedulerClock) {
+    init(clock: any SchedulerClock, calendar: Calendar = .current) {
         self.clock = clock
+        self.calendar = calendar
     }
 
     func snapshot(
@@ -101,7 +103,8 @@ final class PollingScheduler {
                 )
             }
 
-            let nextCheckInAt = eventDate.addingTimeInterval(pollingInterval)
+            let resumedAt = max(eventDate, silenceEndsAt)
+            let nextCheckInAt = resumedAt.addingTimeInterval(pollingInterval)
             return makeResult(
                 nextCheckInAt: nextCheckInAt,
                 isPromptOverdue: false,
@@ -123,7 +126,11 @@ final class PollingScheduler {
         }
 
         if let delayedUntilAt = state.delayedUntilAt {
-            let referenceStart = delayReferenceStart(for: state, pollingInterval: pollingInterval)
+            let referenceStart = effectiveElapsedStart(
+                for: state,
+                scheduledCheckInAt: delayedUntilAt,
+                pollingInterval: pollingInterval
+            )
 
             if eventDate < delayedUntilAt {
                 return makeResult(
@@ -189,7 +196,11 @@ final class PollingScheduler {
         }
 
         if existingNextCheckInAt <= eventDate {
-            let referenceStart = state.lastCheckInAt ?? existingNextCheckInAt.addingTimeInterval(-pollingInterval)
+            let referenceStart = effectiveElapsedStart(
+                for: state,
+                scheduledCheckInAt: existingNextCheckInAt,
+                pollingInterval: pollingInterval
+            )
             let elapsedInterval = max(eventDate.timeIntervalSince(referenceStart), pollingInterval)
             return makeResult(
                 nextCheckInAt: existingNextCheckInAt,
@@ -211,7 +222,11 @@ final class PollingScheduler {
             )
         }
 
-        let referenceStart = state.lastCheckInAt ?? existingNextCheckInAt.addingTimeInterval(-pollingInterval)
+        let referenceStart = effectiveElapsedStart(
+            for: state,
+            scheduledCheckInAt: existingNextCheckInAt,
+            pollingInterval: pollingInterval
+        )
         let elapsedInterval = max(existingNextCheckInAt.timeIntervalSince(referenceStart), pollingInterval)
         return makeResult(
             nextCheckInAt: existingNextCheckInAt,
@@ -243,7 +258,11 @@ final class PollingScheduler {
         let delayDuration = TimeInterval(delayMinutes * 60)
         let delayedUntilAt = delayDate.addingTimeInterval(delayDuration)
         let promptReference = state.delayedFromPromptAt ?? state.nextCheckInAt ?? delayDate
-        let referenceStart = state.lastCheckInAt ?? promptReference.addingTimeInterval(-pollingInterval)
+        let referenceStart = effectiveElapsedStart(
+            for: state,
+            scheduledCheckInAt: promptReference,
+            pollingInterval: pollingInterval
+        )
 
         return makeResult(
             nextCheckInAt: delayedUntilAt,
@@ -408,20 +427,25 @@ final class PollingScheduler {
         )
     }
 
-    private func delayReferenceStart(
+    private func effectiveElapsedStart(
         for state: SchedulerStateRecord,
+        scheduledCheckInAt: Date,
         pollingInterval: TimeInterval
     ) -> Date {
+        var candidateStarts = [scheduledCheckInAt.addingTimeInterval(-pollingInterval)]
+
         if let lastCheckInAt = state.lastCheckInAt {
-            return lastCheckInAt
+            candidateStarts.append(lastCheckInAt)
         }
 
-        let promptReference = state.delayedFromPromptAt ?? state.nextCheckInAt ?? clock.now
-        return promptReference.addingTimeInterval(-pollingInterval)
+        if let lastAppLaunchAt = state.lastAppLaunchAt {
+            candidateStarts.append(lastAppLaunchAt)
+        }
+
+        return candidateStarts.max() ?? scheduledCheckInAt.addingTimeInterval(-pollingInterval)
     }
 
     private func nextLocalMidnight(after date: Date) -> Date {
-        let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)
         return calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? date
     }

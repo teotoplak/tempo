@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 5 executed
-last_updated: "2026-03-15T23:59:54.000Z"
-last_activity: 2026-03-16 — Phase 5 implemented and verified with swift test
+status: awaiting_human_verification
+stopped_at: Phase 6 awaiting human verification
+last_updated: "2026-03-16T00:16:35Z"
+last_activity: 2026-03-16 — Phase 6 plans executed and verified in tests; live macOS verification pending
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 16
-  completed_plans: 14
-  percent: 83
+  completed_plans: 16
+  percent: 100
 ---
 
 # Project State
@@ -26,16 +26,16 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 ## Current Position
 
 Phase: 6 of 6 (Launch and Correctness Hardening)
-Plan: 0 of 2 in current phase
-Status: Ready for Phase 6 planning
-Last activity: 2026-03-16 — Phase 5 implemented and verified with swift test
+Plan: 2 of 2 in current phase
+Status: Awaiting human verification for Phase 6
+Last activity: 2026-03-16 — Phase 6 plans executed and verified in tests; live macOS verification pending
 
-Progress: [████████░░] 83%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 14
+- Total plans completed: 16
 - Average duration: 12 min
 - Total execution time: 2.9 hours
 
@@ -50,8 +50,8 @@ Progress: [████████░░] 83%
 | 5 | 3 | 32 min | 10 min |
 
 **Recent Trend:**
-- Last 5 plans: 04-01, 04-02, 05-01, 05-02, 05-03
-- Trend: Reporting now reuses one analytics snapshot for on-screen review and CSV export, with period-aligned boundaries and export verification
+- Last 5 plans: 05-01, 05-02, 05-03, 06-01, 06-02
+- Trend: Launch-at-login is wired through the app model and scheduler recovery now clamps relaunch/midnight edge cases with regression coverage
 
 ## Accumulated Context
 
@@ -75,7 +75,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None currently recorded.
+- Manual verification still needed for real macOS login-item registration and a live midnight recovery pass.
 
 ### Blockers/Concerns
 
@@ -84,5 +84,5 @@ None currently recorded.
 ## Session Continuity
 
 Last session: 2026-03-15T23:59:54.000Z
-Stopped at: Phase 5 executed
-Resume file: .planning/phases/05-analytics-and-csv-export/05-03-SUMMARY.md
+Stopped at: Phase 6 awaiting human verification
+Resume file: .planning/phases/06-launch-and-correctness-hardening/06-VERIFICATION.md

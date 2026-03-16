@@ -191,8 +191,51 @@ final class CheckInCompletionTests: XCTestCase {
         XCTAssertFalse(promptSource.contains("NSSound"))
         XCTAssertFalse(promptSource.contains("NSBeep"))
     }
+
+    @MainActor
+    func testSelectingProjectAfterRecoveredRelaunchSchedulesFreshPollingInterval() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now),
+            calendar: fixedCompletionCalendar(),
+            launchAtLoginController: FixedCompletionLaunchAtLoginController(isEnabled: false)
+        )
+        let project = ProjectRecord(name: "Client Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        try appModel.modelContext.save()
+        appModel.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(4 * 60 * 60))
+        appModel.schedulerStateRecord.nextCheckInAt = now.addingTimeInterval(-(2 * 60 * 60))
+        appModel.schedulerStateRecord.lastAppLaunchAt = now.addingTimeInterval(-(40 * 60))
+
+        appModel.recoverSchedulerState(eventDate: now)
+        try appModel.selectProjectForPrompt(project)
+
+        let entries = try appModel.modelContext.fetch(FetchDescriptor<TimeEntryRecord>())
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].startAt, now.addingTimeInterval(-(40 * 60)))
+        XCTAssertEqual(entries[0].endAt, now)
+        XCTAssertEqual(appModel.schedulerStateRecord.nextCheckInAt, now.addingTimeInterval(25 * 60))
+    }
 }
 
 private struct FixedCompletionClock: SchedulerClock {
     let now: Date
+}
+
+@MainActor
+private final class FixedCompletionLaunchAtLoginController: LaunchAtLoginControlling {
+    let isEnabled: Bool
+
+    init(isEnabled: Bool) {
+        self.isEnabled = isEnabled
+    }
+
+    func setEnabled(_ enabled: Bool) throws {}
+}
+
+private func fixedCompletionCalendar() -> Calendar {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .gmt
+    return calendar
 }
