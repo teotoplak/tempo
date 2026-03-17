@@ -441,6 +441,10 @@ final class TempoAppModel {
     }
 
     func submitPromptSearch() throws {
+        guard isPromptInteractionActive else {
+            return
+        }
+
         let trimmedQuery = promptSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             if let selectedPromptProject {
@@ -483,6 +487,10 @@ final class TempoAppModel {
     }
 
     func selectProjectForPrompt(_ project: ProjectRecord) throws {
+        guard isPromptInteractionActive else {
+            return
+        }
+
         if shouldTreatPromptSelectionAsFreshCheckIn {
             try persistFreshPromptSelection(for: project)
             return
@@ -497,6 +505,10 @@ final class TempoAppModel {
     }
 
     func createAndSelectProjectForPrompt(named name: String) throws {
+        guard isPromptInteractionActive else {
+            return
+        }
+
         let project = try createProjectRecord(named: name)
         if shouldTreatPromptSelectionAsFreshCheckIn {
             try persistFreshPromptSelection(for: project)
@@ -560,7 +572,10 @@ final class TempoAppModel {
         persistProjectCheckIn(project, at: completionDate, source: "idle-return")
         try modelContext.save()
         refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
-        refreshAnalytics(referenceDate: clock.now)
+        refreshAnalytics(referenceDate: completionDate)
+        promptSearchText = ""
+        refreshCheckInPromptState()
+        dismissCheckInPrompt()
     }
 
     func discardPendingIdle() throws {
@@ -1054,6 +1069,10 @@ final class TempoAppModel {
 
     private var shouldPresentUnansweredIdlePrompt: Bool {
         isIdlePending && pendingIdleEndedAt == nil && pendingIdleReason == "unanswered-prompt"
+    }
+
+    private var isPromptInteractionActive: Bool {
+        checkInPromptState.isPresented || isIdlePending
     }
 
     private var shouldTreatPromptSelectionAsFreshCheckIn: Bool {

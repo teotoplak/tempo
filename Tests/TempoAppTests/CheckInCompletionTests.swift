@@ -15,6 +15,8 @@ final class CheckInCompletionTests: XCTestCase {
         appModel.modelContext.insert(project)
         try appModel.modelContext.save()
         appModel.accountableElapsedInterval = 25 * 60
+        appModel.isPromptOverdue = true
+        appModel.refreshCheckInPromptState()
 
         try appModel.selectProjectForPrompt(project)
 
@@ -42,7 +44,9 @@ final class CheckInCompletionTests: XCTestCase {
         appModel.modelContext.insert(projectCheckIn(project: beta, at: now.addingTimeInterval(-300)))
         try appModel.modelContext.save()
         appModel.accountableElapsedInterval = 25 * 60
+        appModel.isPromptOverdue = true
         appModel.updatePromptSearchText("")
+        appModel.refreshCheckInPromptState()
 
         try appModel.submitPromptSearch()
 
@@ -62,6 +66,8 @@ final class CheckInCompletionTests: XCTestCase {
             modelContainer: TempoModelContainer.inMemory(),
             clock: FixedCompletionClock(now: now)
         )
+        appModel.isPromptOverdue = true
+        appModel.refreshCheckInPromptState()
 
         try appModel.createAndSelectProjectForPrompt(named: "  Deep Work  ")
 
@@ -97,6 +103,7 @@ final class CheckInCompletionTests: XCTestCase {
         appModel.pendingIdleEndedAt = now
         appModel.pendingIdleDuration = 15 * 60
         appModel.isIdlePending = true
+        appModel.refreshCheckInPromptState()
         try appModel.modelContext.save()
 
         try appModel.selectProjectForPrompt(project)
@@ -110,6 +117,39 @@ final class CheckInCompletionTests: XCTestCase {
         XCTAssertEqual(checkIns[1].timestamp, now)
         XCTAssertEqual(checkIns[1].source, "idle-return")
         XCTAssertFalse(appModel.isIdlePending)
+        XCTAssertEqual(appModel.nextCheckInAt, now.addingTimeInterval(25 * 60))
+    }
+
+    @MainActor
+    func testSelectingProjectTwiceAfterIdleReturnIgnoresSecondPromptSubmission() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now)
+        )
+        let project = ProjectRecord(name: "Client Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        appModel.modelContext.insert(
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(15 * 60)),
+                kind: "idle",
+                source: "screen-locked",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try appModel.modelContext.save()
+        appModel.recoverSchedulerState(eventDate: now, activityDate: now)
+
+        try appModel.selectProjectForPrompt(project)
+        try appModel.selectProjectForPrompt(project)
+
+        let checkIns = try appModel.modelContext.fetch(
+            FetchDescriptor<CheckInRecord>(sortBy: [SortDescriptor(\.timestamp)])
+        )
+        XCTAssertEqual(checkIns.count, 2)
+        XCTAssertEqual(checkIns[0].kind, "idle")
+        XCTAssertEqual(checkIns[1].kind, "project")
+        XCTAssertEqual(checkIns[1].source, "idle-return")
         XCTAssertEqual(appModel.nextCheckInAt, now.addingTimeInterval(25 * 60))
     }
 

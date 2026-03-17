@@ -85,7 +85,6 @@ struct CheckInPromptContent: View {
                 projects: appModel?.visiblePromptProjects ?? [],
                 selectedProjectID: appModel?.selectedPromptProjectID,
                 onProjectTap: onProjectTap,
-                onProjectDoubleTap: onProjectDoubleTap,
                 compact: true
             )
             .padding(.top, 2)
@@ -142,10 +141,6 @@ struct CheckInPromptContent: View {
     }
 
     private func onProjectTap(_ project: ProjectRecord) {
-        try? appModel?.selectProjectForPrompt(project)
-    }
-
-    private func onProjectDoubleTap(_ project: ProjectRecord) {
         try? appModel?.selectProjectForPrompt(project)
     }
 
