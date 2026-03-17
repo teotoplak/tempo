@@ -29,6 +29,33 @@ final class CheckInCompletionTests: XCTestCase {
     }
 
     @MainActor
+    func testSubmitPromptSearchWithEmptyQueryUsesSelectedProject() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now)
+        )
+        let alpha = ProjectRecord(name: "Alpha", sortOrder: 0)
+        let beta = ProjectRecord(name: "Beta", sortOrder: 1)
+        appModel.modelContext.insert(alpha)
+        appModel.modelContext.insert(beta)
+        appModel.modelContext.insert(projectCheckIn(project: beta, at: now.addingTimeInterval(-300)))
+        try appModel.modelContext.save()
+        appModel.accountableElapsedInterval = 25 * 60
+        appModel.updatePromptSearchText("")
+
+        try appModel.submitPromptSearch()
+
+        let checkIns = try appModel.modelContext.fetch(
+            FetchDescriptor<CheckInRecord>(sortBy: [SortDescriptor(\.timestamp)])
+        )
+        XCTAssertEqual(checkIns.count, 2)
+        XCTAssertEqual(checkIns[1].project?.name, "Beta")
+        XCTAssertEqual(checkIns[1].timestamp, now)
+        XCTAssertEqual(checkIns[1].source, "check-in")
+    }
+
+    @MainActor
     func testCreateAndSelectProjectPersistsProjectAndCheckIn() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_100)
         let appModel = TempoAppModel(
@@ -162,6 +189,15 @@ final class CheckInCompletionTests: XCTestCase {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .gmt
         return calendar
+    }
+
+    private func projectCheckIn(project: ProjectRecord, at date: Date) -> CheckInRecord {
+        CheckInRecord(
+            timestamp: date,
+            kind: "project",
+            source: "test",
+            project: project
+        )
     }
 }
 

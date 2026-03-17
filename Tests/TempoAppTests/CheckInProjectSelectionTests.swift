@@ -54,6 +54,56 @@ final class CheckInProjectSelectionTests: XCTestCase {
         XCTAssertFalse(appModel.canCreatePromptProject(named: "   "))
     }
 
+    @MainActor
+    func testVisiblePromptProjectsLimitSelectionToVisibleRows() throws {
+        let container = TempoModelContainer.inMemory()
+        let appModel = TempoAppModel(modelContainer: container)
+        let projects = [
+            ProjectRecord(name: "Alpha", sortOrder: 0),
+            ProjectRecord(name: "Beta", sortOrder: 1),
+            ProjectRecord(name: "Gamma", sortOrder: 2),
+            ProjectRecord(name: "Delta", sortOrder: 3),
+            ProjectRecord(name: "Epsilon", sortOrder: 4),
+        ]
+
+        for project in projects {
+            appModel.modelContext.insert(project)
+        }
+        try appModel.modelContext.save()
+
+        appModel.updatePromptSearchText("")
+        XCTAssertEqual(appModel.visiblePromptProjects.map(\.name), ["Alpha", "Beta", "Gamma", "Delta"])
+        XCTAssertEqual(appModel.selectedPromptProjectID, projects[0].id)
+
+        appModel.movePromptSelection(by: 1)
+        XCTAssertEqual(appModel.selectedPromptProjectID, projects[1].id)
+
+        appModel.movePromptSelection(by: 10)
+        XCTAssertEqual(appModel.selectedPromptProjectID, projects[3].id)
+
+        appModel.movePromptSelection(by: -10)
+        XCTAssertEqual(appModel.selectedPromptProjectID, projects[0].id)
+    }
+
+    @MainActor
+    func testUpdatePromptSearchTextKeepsSelectionWithinVisibleMatches() throws {
+        let container = TempoModelContainer.inMemory()
+        let appModel = TempoAppModel(modelContainer: container)
+        let alpha = ProjectRecord(name: "Alpha", sortOrder: 0)
+        let alpine = ProjectRecord(name: "Alpine", sortOrder: 1)
+        let altitude = ProjectRecord(name: "Altitude", sortOrder: 2)
+        let algae = ProjectRecord(name: "Algae", sortOrder: 3)
+        let almanac = ProjectRecord(name: "Almanac", sortOrder: 4)
+
+        [alpha, alpine, altitude, algae, almanac].forEach(appModel.modelContext.insert)
+        try appModel.modelContext.save()
+
+        appModel.updatePromptSearchText("al")
+
+        XCTAssertEqual(appModel.visiblePromptProjects.map(\.name), ["Alpha", "Alpine", "Altitude", "Algae"])
+        XCTAssertEqual(appModel.selectedPromptProjectID, alpha.id)
+    }
+
     private func projectCheckIn(project: ProjectRecord, at date: Date) -> CheckInRecord {
         CheckInRecord(
             timestamp: date,

@@ -46,6 +46,8 @@ enum IdleResolutionError: LocalizedError {
 @MainActor
 @Observable
 final class TempoAppModel {
+    private static let promptProjectDisplayLimit = 4
+
     enum WindowSection: String, CaseIterable, Identifiable {
         case projects
         case analytics
@@ -418,6 +420,10 @@ final class TempoAppModel {
         }
     }
 
+    var visiblePromptProjects: [ProjectRecord] {
+        Array(filteredPromptProjects.prefix(Self.promptProjectDisplayLimit))
+    }
+
     func canCreatePromptProject(named rawName: String) -> Bool {
         let trimmedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
@@ -437,6 +443,9 @@ final class TempoAppModel {
     func submitPromptSearch() throws {
         let trimmedQuery = promptSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
+            if let selectedPromptProject {
+                try selectProjectForPrompt(selectedPromptProject)
+            }
             return
         }
 
@@ -445,16 +454,23 @@ final class TempoAppModel {
             return
         }
 
-        if isIdlePending {
-            if let selectedPromptProject {
-                try assignPendingIdle(to: selectedPromptProject)
-            }
-            return
-        }
-
         if let selectedPromptProject {
             try selectProjectForPrompt(selectedPromptProject)
         }
+    }
+
+    func movePromptSelection(by offset: Int) {
+        let projects = visiblePromptProjects
+        guard !projects.isEmpty, offset != 0 else {
+            return
+        }
+
+        let currentIndex = selectedPromptProjectID.flatMap { selectedProjectID in
+            projects.firstIndex { $0.id == selectedProjectID }
+        }
+        let baseIndex = currentIndex ?? (offset > 0 ? -1 : projects.count)
+        let nextIndex = min(max(baseIndex + offset, 0), projects.count - 1)
+        selectedPromptProjectID = projects[nextIndex].id
     }
 
     func createProject(named name: String) throws {
@@ -755,7 +771,7 @@ final class TempoAppModel {
     }
 
     private func syncPromptSelection() {
-        let filteredProjects = filteredPromptProjects
+        let filteredProjects = visiblePromptProjects
         let trimmedQuery = promptSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if filteredProjects.isEmpty {

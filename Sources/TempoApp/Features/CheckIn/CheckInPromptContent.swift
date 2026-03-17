@@ -3,7 +3,7 @@ import SwiftUI
 struct CheckInPromptContent: View {
     let appModel: TempoAppModel?
     let state: CheckInPromptState
-    @FocusState private var isSearchFieldFocused: Bool
+    @State private var searchFieldFocusRequestID = 0
 
     private var isIdleResolution: Bool {
         appModel?.isIdlePending ?? false
@@ -34,13 +34,15 @@ struct CheckInPromptContent: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 10) {
-                TextField(isIdleResolution ? "Find or create a project" : "Type a project", text: promptSearchText)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($isSearchFieldFocused)
+                PromptSearchField(
+                    placeholder: isIdleResolution ? "Find or create a project" : "Type a project",
+                    text: promptSearchText,
+                    focusRequestID: searchFieldFocusRequestID,
+                    onSubmit: submitPromptSearch,
+                    onMoveUp: { appModel?.movePromptSelection(by: -1) },
+                    onMoveDown: { appModel?.movePromptSelection(by: 1) }
+                )
                     .help("Select an existing project or create one from what you type.")
-                    .onSubmit {
-                        submitPromptSearch()
-                    }
 
                 compactProjectListSection
 
@@ -69,7 +71,7 @@ struct CheckInPromptContent: View {
 
     @ViewBuilder
     private var compactProjectListSection: some View {
-        if appModel?.filteredPromptProjects.isEmpty ?? true {
+        if appModel?.visiblePromptProjects.isEmpty ?? true {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(controlBackground)
                 .frame(maxWidth: .infinity, minHeight: 72)
@@ -80,7 +82,7 @@ struct CheckInPromptContent: View {
                 }
         } else {
             CheckInProjectListView(
-                projects: Array((appModel?.filteredPromptProjects ?? []).prefix(4)),
+                projects: appModel?.visiblePromptProjects ?? [],
                 selectedProjectID: appModel?.selectedPromptProjectID,
                 onProjectTap: onProjectTap,
                 onProjectDoubleTap: onProjectDoubleTap,
@@ -160,9 +162,7 @@ struct CheckInPromptContent: View {
     }
 
     private func focusSearchFieldIfNeeded() {
-        DispatchQueue.main.async {
-            isSearchFieldFocused = true
-        }
+        searchFieldFocusRequestID += 1
     }
 
     private func promptSupportingSubtitle(at date: Date) -> String {
