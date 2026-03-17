@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/readme/metronome-fill.png" alt="Tempo metronome icon" width="88">
+  <img src="https://raw.githubusercontent.com/teotoplak/tempo/main/docs/readme/metronome-fill.png" alt="Tempo metronome icon" width="88">
 </p>
 
 # Tempo
@@ -11,10 +11,10 @@ Instead of asking you to start and stop timers, Tempo checks in on a schedule, a
 <table>
   <tr>
     <td width="50%">
-      <img src="docs/readme/app-screenshot-1.png" alt="Tempo app screenshot showing the check-in prompt" width="100%">
+      <img src="https://raw.githubusercontent.com/teotoplak/tempo/main/docs/readme/app-screenshot-1.png" alt="Tempo app screenshot showing the check-in prompt" width="100%">
     </td>
     <td width="50%">
-      <img src="docs/readme/app-screenshot-2.png" alt="Tempo app screenshot showing the menu bar controls" width="100%">
+      <img src="https://raw.githubusercontent.com/teotoplak/tempo/main/docs/readme/app-screenshot-2.png" alt="Tempo app screenshot showing the menu bar controls" width="100%">
     </td>
   </tr>
 </table>
