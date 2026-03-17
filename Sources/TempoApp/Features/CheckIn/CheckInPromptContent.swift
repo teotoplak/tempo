@@ -34,21 +34,13 @@ struct CheckInPromptContent: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    TextField(isIdleResolution ? "Find or create a project" : "Type a project", text: promptSearchText)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($isSearchFieldFocused)
-                        .onSubmit {
-                            submitPromptSearch()
-                        }
-
-                    Image(systemName: "questionmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18, height: 18)
-                        .background(controlBackground, in: Circle())
-                        .help("Select an existing project or create one from what you type.")
-                }
+                TextField(isIdleResolution ? "Find or create a project" : "Type a project", text: promptSearchText)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($isSearchFieldFocused)
+                    .help("Select an existing project or create one from what you type.")
+                    .onSubmit {
+                        submitPromptSearch()
+                    }
 
                 compactProjectListSection
 

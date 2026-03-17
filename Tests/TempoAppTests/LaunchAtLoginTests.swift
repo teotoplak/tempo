@@ -19,6 +19,46 @@ final class LaunchAtLoginTests: XCTestCase {
     }
 
     @MainActor
+    func testDefaultPreferenceEnablesLaunchAtLoginDuringBootstrap() throws {
+        let controller = StubLaunchAtLoginController(isEnabled: false)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedLaunchAtLoginClock(now: Date(timeIntervalSince1970: 1_700_000_000)),
+            launchAtLoginController: controller
+        )
+
+        XCTAssertTrue(model.settings.launchAtLoginEnabled)
+        XCTAssertFalse(model.launchAtLoginEnabled)
+
+        model.performInitialLaunchIfNeeded()
+
+        XCTAssertEqual(controller.setEnabledCalls, [true])
+        XCTAssertTrue(model.launchAtLoginEnabled)
+        XCTAssertTrue(model.settings.launchAtLoginEnabled)
+        XCTAssertNil(model.launchAtLoginErrorMessage)
+    }
+
+    @MainActor
+    func testBootstrapPreservesPreferredDefaultWhenRegistrationFails() throws {
+        let controller = StubLaunchAtLoginController(
+            isEnabled: false,
+            error: LaunchAtLoginControllerError.registrationFailed(underlying: TestLaunchAtLoginError.registrationFailed)
+        )
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedLaunchAtLoginClock(now: Date(timeIntervalSince1970: 1_700_000_000)),
+            launchAtLoginController: controller
+        )
+
+        model.performInitialLaunchIfNeeded()
+
+        XCTAssertEqual(controller.setEnabledCalls, [true])
+        XCTAssertFalse(model.launchAtLoginEnabled)
+        XCTAssertTrue(model.settings.launchAtLoginEnabled)
+        XCTAssertNotNil(model.launchAtLoginErrorMessage)
+    }
+
+    @MainActor
     func testSaveLaunchAtLoginPreferencePersistsEnabledState() throws {
         let controller = StubLaunchAtLoginController(isEnabled: false)
         let model = TempoAppModel(

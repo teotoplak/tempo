@@ -14,7 +14,7 @@ final class AppSettingsRecord {
         pollingIntervalMinutes: Int = 25,
         idleThresholdMinutes: Int = 5,
         analyticsDayCutoffHour: Int = 6,
-        launchAtLoginEnabled: Bool = false
+        launchAtLoginEnabled: Bool = true
     ) {
         self.singletonKey = singletonKey
         self.pollingIntervalMinutes = pollingIntervalMinutes

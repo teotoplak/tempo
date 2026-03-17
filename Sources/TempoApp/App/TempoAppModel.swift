@@ -178,17 +178,29 @@ final class TempoAppModel {
 
         hasHandledInitialLaunch = true
         observeWorkspaceWake()
-        syncLaunchAtLoginPreferenceFromSystem()
+        reconcileLaunchAtLoginPreferenceWithSystem()
         recoverSchedulerState(eventDate: clock.now)
         refreshAnalytics(referenceDate: clock.now)
         presentLaunchCheckInPrompt()
     }
 
-    func syncLaunchAtLoginPreferenceFromSystem() {
+    func reconcileLaunchAtLoginPreferenceWithSystem() {
+        if settings.launchAtLoginEnabled && !launchAtLoginController.isEnabled {
+            do {
+                try launchAtLoginController.setEnabled(true)
+            } catch {
+                launchAtLoginErrorMessage = error.localizedDescription
+            }
+        }
+
         let isEnabled = launchAtLoginController.isEnabled
         launchAtLoginEnabled = isEnabled
-        settings.launchAtLoginEnabled = isEnabled
-        launchAtLoginErrorMessage = nil
+        if isEnabled || !settings.launchAtLoginEnabled {
+            settings.launchAtLoginEnabled = isEnabled
+        }
+        if isEnabled {
+            launchAtLoginErrorMessage = nil
+        }
         try? modelContext.save()
     }
 

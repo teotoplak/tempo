@@ -50,6 +50,20 @@ final class CheckInPromptPresentationTests: XCTestCase {
         XCTAssertFalse(promptSource.contains("Menu {"))
     }
 
+    func testPromptDoesNotRenderQuestionMarkHelpIcon() throws {
+        let rootURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let promptSource = try String(
+            contentsOf: rootURL.appendingPathComponent("Sources/TempoApp/Features/CheckIn/CheckInPromptContent.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(promptSource.contains("Image(systemName: \"questionmark\")"))
+        XCTAssertTrue(promptSource.contains(".help(\"Select an existing project or create one from what you type.\")"))
+    }
+
     @MainActor
     func testPromptAlwaysUsesStandardSize() {
         let state = CheckInPromptState(
