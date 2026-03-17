@@ -11,10 +11,10 @@ Instead of asking you to start and stop timers, Tempo checks in on a schedule, a
 <table>
   <tr>
     <td width="50%">
-      <img src="docs/readme/app-screenshot-1.png" alt="Tempo app screenshot showing analytics overview" width="100%">
+      <img src="docs/readme/app-screenshot-1.png" alt="Tempo app screenshot showing the check-in prompt" width="100%">
     </td>
     <td width="50%">
-      <img src="docs/readme/app-screenshot-2.png" alt="Tempo app screenshot showing analytics details" width="100%">
+      <img src="docs/readme/app-screenshot-2.png" alt="Tempo app screenshot showing the menu bar controls" width="100%">
     </td>
   </tr>
 </table>
