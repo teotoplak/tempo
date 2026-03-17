@@ -109,6 +109,36 @@ final class TempoAppBootstrapTests: XCTestCase {
     }
 
     @MainActor
+    func testUnansweredPromptIdleKeepsPromptVisibleUntilUserReturns() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let idleStart = now.addingTimeInterval(-(12 * 60))
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now)
+        )
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: idleStart,
+                kind: "idle",
+                source: "unanswered-prompt",
+                idleKind: TimeAllocationIdleKind.unansweredPrompt.rawValue
+            )
+        )
+        try model.modelContext.save()
+
+        model.recoverSchedulerState(eventDate: now, activityDate: idleStart.addingTimeInterval(-60))
+        model.refreshCheckInPromptState()
+
+        XCTAssertTrue(model.isIdlePending)
+        XCTAssertNil(model.pendingIdleEndedAt)
+        XCTAssertTrue(model.checkInPromptState.isPresented)
+        XCTAssertEqual(
+            model.promptSupportingSubtitle(at: now),
+            "Idle is on · unanswered prompt for 12m"
+        )
+    }
+
+    @MainActor
     func testSubmitPromptSearchCreatesProjectWhenQueryIsNew() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = TempoAppModel(

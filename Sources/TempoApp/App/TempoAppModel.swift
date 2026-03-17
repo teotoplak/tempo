@@ -247,7 +247,7 @@ final class TempoAppModel {
 
     func refreshCheckInPromptState() {
         ensureIdleSelectionDefaults()
-        let shouldPresent = isPromptOverdue || shouldPresentPendingIdlePrompt
+        let shouldPresent = isPromptOverdue || shouldPresentPendingIdlePrompt || shouldPresentUnansweredIdlePrompt
         let promptTitle = "What are you currently doing"
         let supportingSubtitle = promptSupportingSubtitle(at: clock.now)
         checkInPromptState = CheckInPromptState(
@@ -455,24 +455,26 @@ final class TempoAppModel {
     }
 
     func selectProjectForPrompt(_ project: ProjectRecord) throws {
+        if shouldTreatPromptSelectionAsFreshCheckIn {
+            try persistFreshPromptSelection(for: project)
+            return
+        }
+
         if isIdlePending {
             try assignPendingIdle(to: project)
             return
         }
 
-        let completionDate = clock.now
-        persistProjectCheckIn(project, at: completionDate, source: "check-in")
-        try modelContext.save()
-
-        refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
-        refreshAnalytics(referenceDate: completionDate)
-        promptSearchText = ""
-        refreshCheckInPromptState()
-        dismissCheckInPrompt()
+        try persistFreshPromptSelection(for: project)
     }
 
     func createAndSelectProjectForPrompt(named name: String) throws {
         let project = try createProjectRecord(named: name)
+        if shouldTreatPromptSelectionAsFreshCheckIn {
+            try persistFreshPromptSelection(for: project)
+            return
+        }
+
         if isIdlePending {
             selectedPromptProjectID = project.id
             promptSearchText = ""
@@ -1022,6 +1024,14 @@ final class TempoAppModel {
         isIdlePending && pendingIdleEndedAt != nil
     }
 
+    private var shouldPresentUnansweredIdlePrompt: Bool {
+        isIdlePending && pendingIdleEndedAt == nil && pendingIdleReason == "unanswered-prompt"
+    }
+
+    private var shouldTreatPromptSelectionAsFreshCheckIn: Bool {
+        shouldPresentUnansweredIdlePrompt
+    }
+
     private func schedulePromptTimerIfNeeded() {
         scheduledPromptTimer?.invalidate()
         scheduledPromptTimer = nil
@@ -1087,7 +1097,14 @@ final class TempoAppModel {
 
     func promptSupportingSubtitle(at date: Date) -> String {
         if shouldPresentPendingIdlePrompt {
-            return Self.idleSupportingSubtitle(duration: pendingIdleDuration, reason: pendingIdleReasonLabel)
+            return Self.idleSupportingSubtitle(
+                duration: pendingIdleDuration(at: date),
+                reason: pendingIdleReasonLabel
+            )
+        }
+
+        if shouldPresentUnansweredIdlePrompt {
+            return "Idle is on · unanswered prompt for \(Self.formattedCompactDuration(pendingIdleDuration(at: date)))"
         }
 
         let elapsed = Self.formattedElapsedText(for: accountableElapsedInterval)
@@ -1148,6 +1165,27 @@ final class TempoAppModel {
         }
 
         return referenceDate.addingTimeInterval(-idleSeconds)
+    }
+
+    private func pendingIdleDuration(at date: Date) -> TimeInterval {
+        guard let pendingIdleStartedAt else {
+            return 0
+        }
+
+        let pendingIdleEndReference = pendingIdleEndedAt ?? date
+        return max(pendingIdleEndReference.timeIntervalSince(pendingIdleStartedAt), 0)
+    }
+
+    private func persistFreshPromptSelection(for project: ProjectRecord) throws {
+        let completionDate = clock.now
+        persistProjectCheckIn(project, at: completionDate, source: "check-in")
+        try modelContext.save()
+
+        refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
+        refreshAnalytics(referenceDate: completionDate)
+        promptSearchText = ""
+        refreshCheckInPromptState()
+        dismissCheckInPrompt()
     }
 
     nonisolated static func formattedElapsedText(for elapsedDuration: TimeInterval) -> String {

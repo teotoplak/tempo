@@ -87,6 +87,45 @@ final class CheckInCompletionTests: XCTestCase {
     }
 
     @MainActor
+    func testSelectingProjectAfterUnansweredPromptIdleStoresFreshCheckIn() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let idleStart = now.addingTimeInterval(-(15 * 60))
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now)
+        )
+        let project = ProjectRecord(name: "Client Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        appModel.modelContext.insert(
+            CheckInRecord(
+                timestamp: idleStart,
+                kind: "idle",
+                source: "unanswered-prompt",
+                idleKind: TimeAllocationIdleKind.unansweredPrompt.rawValue
+            )
+        )
+        try appModel.modelContext.save()
+        appModel.recoverSchedulerState(
+            eventDate: now,
+            activityDate: idleStart.addingTimeInterval(-60)
+        )
+
+        try appModel.selectProjectForPrompt(project)
+
+        let checkIns = try appModel.modelContext.fetch(
+            FetchDescriptor<CheckInRecord>(sortBy: [SortDescriptor(\.timestamp)])
+        )
+        XCTAssertEqual(checkIns.count, 2)
+        XCTAssertEqual(checkIns[0].kind, "idle")
+        XCTAssertEqual(checkIns[0].source, "unanswered-prompt")
+        XCTAssertEqual(checkIns[1].project?.name, "Client Work")
+        XCTAssertEqual(checkIns[1].timestamp, now)
+        XCTAssertEqual(checkIns[1].source, "check-in")
+        XCTAssertFalse(appModel.isIdlePending)
+        XCTAssertEqual(appModel.nextCheckInAt, now.addingTimeInterval(25 * 60))
+    }
+
+    @MainActor
     func testDoneForDayStoresIdleCheckInAndSilencesUntilCutoff() throws {
         let now = date(2026, 3, 16, 21, 15, 0)
         let appModel = TempoAppModel(

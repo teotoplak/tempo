@@ -1,11 +1,14 @@
 .DS_Store
 
+# Local Codex/GSD workflow state
+.codex/
+.planning/
+
 # Swift Package Manager build artifacts
 .build/
 
-# Xcode/SwiftPM user-specific state
-.swiftpm/xcode/xcuserdata/
-.swiftpm/xcode/package.xcworkspace/xcuserdata/
+# Swift Package Manager local metadata and Xcode workspace state
+.swiftpm/
 
 # Common local Xcode output
 DerivedData/
