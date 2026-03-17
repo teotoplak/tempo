@@ -1,12 +1,27 @@
+<p align="center">
+  <img src="docs/readme/metronome-fill.png" alt="Tempo metronome icon" width="88">
+</p>
+
 # Tempo
 
 Tempo is a native macOS menu bar app for polling-based personal time tracking.
 
 Instead of asking you to start and stop timers, Tempo checks in on a schedule, asks what you are working on, and records time against a project. It is intentionally local-first and single-user: no accounts, no sync, no web service, and no passive surveillance.
 
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/readme/app-screenshot-1.png" alt="Tempo app screenshot showing analytics overview" width="100%">
+    </td>
+    <td width="50%">
+      <img src="docs/readme/app-screenshot-2.png" alt="Tempo app screenshot showing analytics details" width="100%">
+    </td>
+  </tr>
+</table>
+
 ## Why This Exists
 
-Manual timers are easy to forget and hard to trust after a long day. Tempo takes a different approach:
+Manual timers are easy to forget and hard to trust after a long day. Auto-tracking apps are hard to configure across projects. Tempo takes a different approach:
 
 - It prompts you at a configurable interval.
 - It lets you classify the time that just passed.
