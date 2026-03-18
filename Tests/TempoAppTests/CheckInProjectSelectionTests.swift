@@ -86,6 +86,44 @@ final class CheckInProjectSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testMovePromptSelectionIncludesCreateActionAtBottom() throws {
+        let container = TempoModelContainer.inMemory()
+        let appModel = TempoAppModel(modelContainer: container)
+        let linkedin = ProjectRecord(name: "linkedin", sortOrder: 0)
+        appModel.modelContext.insert(linkedin)
+        try appModel.modelContext.save()
+
+        appModel.updatePromptSearchText("link")
+
+        XCTAssertEqual(appModel.selectedPromptProjectID, linkedin.id)
+        XCTAssertFalse(appModel.isCreatePromptProjectSelected)
+
+        appModel.movePromptSelection(by: 1)
+
+        XCTAssertTrue(appModel.isCreatePromptProjectSelected)
+        XCTAssertNil(appModel.selectedPromptProjectID)
+
+        appModel.movePromptSelection(by: -1)
+
+        XCTAssertEqual(appModel.selectedPromptProjectID, linkedin.id)
+        XCTAssertFalse(appModel.isCreatePromptProjectSelected)
+    }
+
+    @MainActor
+    func testUpdatePromptSearchTextDefaultsToCreateActionWhenNoProjectsMatch() throws {
+        let container = TempoModelContainer.inMemory()
+        let appModel = TempoAppModel(modelContainer: container)
+        appModel.modelContext.insert(ProjectRecord(name: "Alpha", sortOrder: 0))
+        try appModel.modelContext.save()
+
+        appModel.updatePromptSearchText("link")
+
+        XCTAssertTrue(appModel.hasVisiblePromptCreateAction)
+        XCTAssertTrue(appModel.isCreatePromptProjectSelected)
+        XCTAssertNil(appModel.selectedPromptProjectID)
+    }
+
+    @MainActor
     func testUpdatePromptSearchTextKeepsSelectionWithinVisibleMatches() throws {
         let container = TempoModelContainer.inMemory()
         let appModel = TempoAppModel(modelContainer: container)
@@ -102,6 +140,21 @@ final class CheckInProjectSelectionTests: XCTestCase {
 
         XCTAssertEqual(appModel.visiblePromptProjects.map(\.name), ["Alpha", "Alpine", "Altitude", "Algae"])
         XCTAssertEqual(appModel.selectedPromptProjectID, alpha.id)
+    }
+
+    @MainActor
+    func testUpdatePromptSearchTextDefaultsToExistingProjectBeforeCreateAction() throws {
+        let container = TempoModelContainer.inMemory()
+        let appModel = TempoAppModel(modelContainer: container)
+        let linkedin = ProjectRecord(name: "linkedin", sortOrder: 0)
+        appModel.modelContext.insert(linkedin)
+        try appModel.modelContext.save()
+
+        appModel.updatePromptSearchText("link")
+
+        XCTAssertEqual(appModel.selectedPromptProjectID, linkedin.id)
+        XCTAssertTrue(appModel.hasVisiblePromptCreateAction)
+        XCTAssertFalse(appModel.isCreatePromptProjectSelected)
     }
 
     private func projectCheckIn(project: ProjectRecord, at date: Date) -> CheckInRecord {

@@ -119,6 +119,65 @@ final class AnalyticsAggregationTests: XCTestCase {
         XCTAssertEqual(appModel.analyticsFirstEntryStartDate, date(2026, 3, 17, 7, 0, 0))
     }
 
+    @MainActor
+    func testMenuBarDayNavigationShowsPreviousDaySummary() throws {
+        let now = date(2026, 3, 18, 8, 0, 0)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedAnalyticsClock(now: now),
+            calendar: testCalendar
+        )
+        let project = ProjectRecord(name: "Client Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 17, 9, 0, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 17, 9, 15, 0)))
+        appModel.modelContext.insert(idleCheckIn(.automaticThreshold, at: date(2026, 3, 17, 9, 30, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 17, 10, 30, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 18, 7, 30, 0)))
+        try appModel.modelContext.save()
+
+        appModel.refreshAnalytics(referenceDate: now)
+        appModel.showPreviousMenuBarDay()
+
+        XCTAssertEqual(appModel.menuBarDayPeriod.startDate, date(2026, 3, 17, 6, 0, 0))
+        XCTAssertEqual(appModel.menuBarDayPeriod.endDate, date(2026, 3, 18, 6, 0, 0))
+        XCTAssertEqual(appModel.menuBarDayProjectSummaries.count, 1)
+        XCTAssertEqual(appModel.menuBarDayProjectSummaries[0].projectName, "Client Work")
+        XCTAssertEqual(appModel.menuBarDayProjectSummaries[0].totalDuration, 15 * 60, accuracy: 0.001)
+        XCTAssertEqual(appModel.menuBarDayProjectSummaries[0].percentageOfTotal, 1, accuracy: 0.001)
+        XCTAssertEqual(appModel.menuBarDayWorkedDuration, 15 * 60, accuracy: 0.001)
+        XCTAssertEqual(appModel.menuBarDayCheckIns.count, 4)
+        XCTAssertTrue(appModel.canShowNextMenuBarDay)
+    }
+
+    @MainActor
+    func testMenuBarDayNavigationStopsAtCurrentDay() throws {
+        let now = date(2026, 3, 18, 8, 0, 0)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedAnalyticsClock(now: now),
+            calendar: testCalendar
+        )
+        let project = ProjectRecord(name: "Client Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 17, 9, 0, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 17, 10, 30, 0)))
+        try appModel.modelContext.save()
+
+        appModel.refreshAnalytics(referenceDate: now)
+        appModel.showPreviousMenuBarDay()
+        appModel.showNextMenuBarDay()
+
+        XCTAssertEqual(appModel.menuBarDayPeriod.startDate, date(2026, 3, 18, 6, 0, 0))
+        XCTAssertEqual(appModel.menuBarDayPeriod.endDate, date(2026, 3, 19, 6, 0, 0))
+        XCTAssertFalse(appModel.canShowNextMenuBarDay)
+
+        let currentPeriod = appModel.menuBarDayPeriod
+        appModel.showNextMenuBarDay()
+
+        XCTAssertEqual(appModel.menuBarDayPeriod, currentPeriod)
+    }
+
     private func projectCheckIn(project: ProjectRecord, at date: Date) -> CheckInRecord {
         CheckInRecord(
             timestamp: date,

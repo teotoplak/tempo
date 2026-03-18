@@ -305,9 +305,13 @@ final class TempoAppBootstrapTests: XCTestCase {
         XCTAssertTrue(menuSource.contains("No tracked time today"))
         XCTAssertTrue(menuSource.contains("summaryDateTitle"))
         XCTAssertTrue(menuSource.contains("Check-ins"))
+        XCTAssertTrue(menuSource.contains("menuBarDayWorkedDuration"))
+        XCTAssertTrue(menuSource.contains("worked"))
         XCTAssertFalse(menuSource.contains("label: \"Tracked\""))
         XCTAssertFalse(menuSource.contains("label: \"Started\""))
         XCTAssertFalse(menuSource.contains("label: \"Finished\""))
+        XCTAssertTrue(menuSource.contains("appModel.showPreviousMenuBarDay()"))
+        XCTAssertTrue(menuSource.contains("appModel.showNextMenuBarDay()"))
     }
 
     func testMenuBarSceneUsesDedicatedLabelView() throws {

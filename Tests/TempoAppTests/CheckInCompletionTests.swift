@@ -83,6 +83,61 @@ final class CheckInCompletionTests: XCTestCase {
     }
 
     @MainActor
+    func testSubmitPromptSearchUsesHighlightedExistingProjectBeforeCreateAction() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now)
+        )
+        let linkedin = ProjectRecord(name: "linkedin", sortOrder: 0)
+        appModel.modelContext.insert(linkedin)
+        try appModel.modelContext.save()
+        appModel.accountableElapsedInterval = 25 * 60
+        appModel.isPromptOverdue = true
+        appModel.refreshCheckInPromptState()
+
+        appModel.updatePromptSearchText("link")
+        try appModel.submitPromptSearch()
+
+        let projects = try appModel.modelContext.fetch(
+            FetchDescriptor<ProjectRecord>(sortBy: [SortDescriptor(\.sortOrder)])
+        )
+        let checkIns = try appModel.modelContext.fetch(FetchDescriptor<CheckInRecord>())
+
+        XCTAssertEqual(projects.map(\.name), ["linkedin"])
+        XCTAssertEqual(checkIns.count, 1)
+        XCTAssertEqual(checkIns[0].project?.name, "linkedin")
+    }
+
+    @MainActor
+    func testSubmitPromptSearchCreatesProjectWhenCreateActionIsHighlighted() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now)
+        )
+        let linkedin = ProjectRecord(name: "linkedin", sortOrder: 0)
+        appModel.modelContext.insert(linkedin)
+        try appModel.modelContext.save()
+        appModel.accountableElapsedInterval = 25 * 60
+        appModel.isPromptOverdue = true
+        appModel.refreshCheckInPromptState()
+
+        appModel.updatePromptSearchText("link")
+        appModel.movePromptSelection(by: 1)
+        try appModel.submitPromptSearch()
+
+        let projects = try appModel.modelContext.fetch(
+            FetchDescriptor<ProjectRecord>(sortBy: [SortDescriptor(\.sortOrder)])
+        )
+        let checkIns = try appModel.modelContext.fetch(FetchDescriptor<CheckInRecord>())
+
+        XCTAssertEqual(projects.map(\.name), ["linkedin", "link"])
+        XCTAssertEqual(checkIns.count, 1)
+        XCTAssertEqual(checkIns[0].project?.name, "link")
+    }
+
+    @MainActor
     func testSelectingProjectAfterIdleReturnStoresOnlyTheReturningProjectCheckIn() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let appModel = TempoAppModel(

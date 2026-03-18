@@ -46,13 +46,6 @@ struct CheckInPromptContent: View {
 
                 compactProjectListSection
 
-                if let appModel, appModel.canCreatePromptProject(named: appModel.promptSearchText) {
-                    InlineProjectCreationView(name: appModel.promptSearchText) {
-                        createProjectFromPrompt()
-                    }
-                    .padding(.horizontal, 4)
-                }
-
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(promptSupportingSubtitle(at: context.date))
                         .font(.caption)
@@ -71,7 +64,10 @@ struct CheckInPromptContent: View {
 
     @ViewBuilder
     private var compactProjectListSection: some View {
-        if appModel?.visiblePromptProjects.isEmpty ?? true {
+        let hasProjects = !(appModel?.visiblePromptProjects.isEmpty ?? true)
+        let hasCreateAction = appModel?.hasVisiblePromptCreateAction ?? false
+
+        if !hasProjects && !hasCreateAction {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(controlBackground)
                 .frame(maxWidth: .infinity, minHeight: 72)
@@ -84,7 +80,10 @@ struct CheckInPromptContent: View {
             CheckInProjectListView(
                 projects: appModel?.visiblePromptProjects ?? [],
                 selectedProjectID: appModel?.selectedPromptProjectID,
+                createProjectName: hasCreateAction ? appModel?.promptSearchText : nil,
+                isCreateProjectSelected: appModel?.isCreatePromptProjectSelected ?? false,
                 onProjectTap: onProjectTap,
+                onCreateProjectTap: createProjectFromPrompt,
                 compact: true
             )
             .padding(.top, 2)

@@ -32,6 +32,11 @@ struct DerivedRuntimeState: Equatable {
     var pendingIdleReason: String?
 }
 
+enum PromptProjectSelection: Equatable {
+    case project(UUID)
+    case createNew
+}
+
 enum IdleResolutionError: LocalizedError {
     case noPendingIdle
 
@@ -87,7 +92,7 @@ final class TempoAppModel {
     var pendingIdleEndedAt: Date?
     var pendingIdleReason: String?
     var pendingIdleDuration: TimeInterval = 0
-    var selectedPromptProjectID: UUID?
+    var promptProjectSelection: PromptProjectSelection?
     var checkInPromptState = CheckInPromptState.hidden
     var promptSearchText = ""
     var selectedAnalyticsRange: AnalyticsRange = .day
@@ -97,8 +102,10 @@ final class TempoAppModel {
     var analyticsFirstEntryStartDate: Date?
     var analyticsTimelineIntervals: [AnalyticsTimelineInterval] = []
     var menuBarDayPeriod: AnalyticsPeriod
+    var menuBarDayWorkedDuration: TimeInterval = 0
     var menuBarDayProjectSummaries: [AnalyticsProjectSummary] = []
     var menuBarDayCheckIns: [TimeAllocationCheckIn] = []
+    var canShowNextMenuBarDay = false
     var analyticsExportStatusMessage: String?
     var analyticsExportErrorMessage: String?
     var launchAtLoginEnabled = false
@@ -113,6 +120,7 @@ final class TempoAppModel {
     private let csvExportService: CSVExportService
     private let launchAtLoginController: any LaunchAtLoginControlling
     private var hasHandledInitialLaunch = false
+    private var menuBarDayReferenceDate: Date
     private var workspaceObservers: [NSObjectProtocol] = []
     private var checkInPromptWindowController: CheckInPromptWindowController?
     private var scheduledPromptTimer: Timer?
@@ -139,6 +147,7 @@ final class TempoAppModel {
             endDate: clock.now,
             label: clock.now.formatted(date: .abbreviated, time: .omitted)
         )
+        self.menuBarDayReferenceDate = clock.now
 
         let settingsFetch = FetchDescriptor<AppSettingsRecord>()
         let schedulerFetch = FetchDescriptor<SchedulerStateRecord>()
@@ -254,6 +263,8 @@ final class TempoAppModel {
             let now = clock.now
             let activityDate = currentUserActivityDate(referenceDate: now)
             recoverSchedulerState(eventDate: now, activityDate: activityDate)
+            menuBarDayReferenceDate = now
+            refreshAnalytics(referenceDate: now)
         }
 
         checkInPromptWindowController?.update(with: checkInPromptState)
@@ -372,6 +383,18 @@ final class TempoAppModel {
         return Self.formattedClockTime(analyticsFirstEntryStartDate)
     }
 
+    var selectedPromptProjectID: UUID? {
+        guard case let .project(projectID) = promptProjectSelection else {
+            return nil
+        }
+
+        return projectID
+    }
+
+    var isCreatePromptProjectSelected: Bool {
+        promptProjectSelection == .createNew
+    }
+
     var selectedPromptProject: ProjectRecord? {
         guard let selectedPromptProjectID else {
             return nil
@@ -424,6 +447,10 @@ final class TempoAppModel {
         Array(filteredPromptProjects.prefix(Self.promptProjectDisplayLimit))
     }
 
+    var hasVisiblePromptCreateAction: Bool {
+        canCreatePromptProject(named: promptSearchText)
+    }
+
     func canCreatePromptProject(named rawName: String) -> Bool {
         let trimmedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
@@ -453,28 +480,39 @@ final class TempoAppModel {
             return
         }
 
-        if canCreatePromptProject(named: trimmedQuery) {
-            try createAndSelectProjectForPrompt(named: trimmedQuery)
-            return
-        }
+        switch promptProjectSelection {
+        case let .project(projectID):
+            if let project = fetchProjects().first(where: { $0.id == projectID }) {
+                try selectProjectForPrompt(project)
+            }
+        case .createNew:
+            if canCreatePromptProject(named: trimmedQuery) {
+                try createAndSelectProjectForPrompt(named: trimmedQuery)
+            }
+        case nil:
+            if let selectedPromptProject {
+                try selectProjectForPrompt(selectedPromptProject)
+                return
+            }
 
-        if let selectedPromptProject {
-            try selectProjectForPrompt(selectedPromptProject)
+            if canCreatePromptProject(named: trimmedQuery) {
+                try createAndSelectProjectForPrompt(named: trimmedQuery)
+            }
         }
     }
 
     func movePromptSelection(by offset: Int) {
-        let projects = visiblePromptProjects
-        guard !projects.isEmpty, offset != 0 else {
+        let selectionItems = visiblePromptSelectionItems
+        guard !selectionItems.isEmpty, offset != 0 else {
             return
         }
 
-        let currentIndex = selectedPromptProjectID.flatMap { selectedProjectID in
-            projects.firstIndex { $0.id == selectedProjectID }
+        let currentIndex = promptProjectSelection.flatMap { currentSelection in
+            selectionItemIndex(for: currentSelection, in: selectionItems)
         }
-        let baseIndex = currentIndex ?? (offset > 0 ? -1 : projects.count)
-        let nextIndex = min(max(baseIndex + offset, 0), projects.count - 1)
-        selectedPromptProjectID = projects[nextIndex].id
+        let baseIndex = currentIndex ?? (offset > 0 ? -1 : selectionItems.count)
+        let nextIndex = min(max(baseIndex + offset, 0), selectionItems.count - 1)
+        promptProjectSelection = selection(for: selectionItems[nextIndex])
     }
 
     func createProject(named name: String) throws {
@@ -484,6 +522,20 @@ final class TempoAppModel {
     func selectAnalyticsRange(_ range: AnalyticsRange) {
         selectedAnalyticsRange = range
         refreshAnalytics(referenceDate: clock.now)
+    }
+
+    func showPreviousMenuBarDay() {
+        menuBarDayReferenceDate = menuBarDayPeriod.startDate.addingTimeInterval(-1)
+        refreshMenuBarDayAnalytics()
+    }
+
+    func showNextMenuBarDay() {
+        guard canShowNextMenuBarDay else {
+            return
+        }
+
+        menuBarDayReferenceDate = menuBarDayPeriod.endDate
+        refreshMenuBarDayAnalytics()
     }
 
     func selectProjectForPrompt(_ project: ProjectRecord) throws {
@@ -516,7 +568,7 @@ final class TempoAppModel {
         }
 
         if isIdlePending {
-            selectedPromptProjectID = project.id
+            promptProjectSelection = .project(project.id)
             promptSearchText = ""
             refreshCheckInPromptState()
             return
@@ -656,24 +708,12 @@ final class TempoAppModel {
             calendar: calendar,
             dayCutoffHour: settings.analyticsDayCutoffHour
         )
-        let daySnapshot = if selectedAnalyticsRange == .day {
-            snapshot
-        } else {
-            analyticsStore.summary(
-                range: .day,
-                referenceDate: referenceDate,
-                calendar: calendar,
-                dayCutoffHour: settings.analyticsDayCutoffHour
-            )
-        }
         analyticsPeriod = snapshot.period
         analyticsTotalDuration = snapshot.totalDuration
         analyticsProjectSummaries = snapshot.projectSummaries
         analyticsFirstEntryStartDate = snapshot.firstEntryStartDate
         analyticsTimelineIntervals = snapshot.timelineIntervals
-        menuBarDayPeriod = daySnapshot.period
-        menuBarDayProjectSummaries = daySnapshot.projectSummaries
-        menuBarDayCheckIns = daySnapshot.checkIns
+        refreshMenuBarDayAnalytics()
     }
 
     func exportAnalyticsCSV() {
@@ -790,28 +830,35 @@ final class TempoAppModel {
         let trimmedQuery = promptSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if filteredProjects.isEmpty {
-            selectedPromptProjectID = preferredPromptProject()?.id
+            promptProjectSelection = canCreatePromptProject(named: trimmedQuery) ? .createNew : nil
             return
         }
 
         if trimmedQuery.isEmpty {
             let preferredProjectID = preferredPromptProject()?.id ?? filteredProjects.first?.id
-            selectedPromptProjectID = preferredProjectID
+            promptProjectSelection = preferredProjectID.map(PromptProjectSelection.project)
             return
         }
 
         if let exactMatch = filteredProjects.first(where: { project in
             project.name.compare(trimmedQuery, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
         }) {
-            selectedPromptProjectID = exactMatch.id
+            promptProjectSelection = .project(exactMatch.id)
             return
         }
 
-        if let selectedPromptProjectID, filteredProjects.contains(where: { $0.id == selectedPromptProjectID }) {
-            return
+        if let promptProjectSelection {
+            switch promptProjectSelection {
+            case let .project(projectID) where filteredProjects.contains(where: { $0.id == projectID }):
+                return
+            case .createNew where canCreatePromptProject(named: trimmedQuery):
+                return
+            default:
+                break
+            }
         }
 
-        selectedPromptProjectID = filteredProjects.first?.id
+        promptProjectSelection = .project(filteredProjects[0].id)
     }
 
     private func ensureIdleSelectionDefaults() {
@@ -821,8 +868,46 @@ final class TempoAppModel {
 
         let projects = filteredPromptProjects.isEmpty ? recentPromptProjects : filteredPromptProjects
 
-        if selectedPromptProject == nil {
-            selectedPromptProjectID = preferredPromptProject(in: projects)?.id
+        if promptProjectSelection == nil {
+            promptProjectSelection = preferredPromptProject(in: projects).map { .project($0.id) }
+        }
+    }
+
+    private enum PromptSelectionItem {
+        case project(ProjectRecord)
+        case createNew
+    }
+
+    private var visiblePromptSelectionItems: [PromptSelectionItem] {
+        var items = visiblePromptProjects.map(PromptSelectionItem.project)
+        if hasVisiblePromptCreateAction {
+            items.append(.createNew)
+        }
+        return items
+    }
+
+    private func selectionItemIndex(
+        for selection: PromptProjectSelection,
+        in items: [PromptSelectionItem]
+    ) -> Int? {
+        items.firstIndex { item in
+            switch (selection, item) {
+            case let (.project(projectID), .project(project)):
+                return projectID == project.id
+            case (.createNew, .createNew):
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    private func selection(for item: PromptSelectionItem) -> PromptProjectSelection {
+        switch item {
+        case let .project(project):
+            return .project(project.id)
+        case .createNew:
+            return .createNew
         }
     }
 
@@ -1021,7 +1106,7 @@ final class TempoAppModel {
             promptPresentedAt = nil
         }
         if !runtimeState.isIdlePending {
-            selectedPromptProjectID = nil
+            promptProjectSelection = nil
         }
 
         schedulerStateRecord.nextCheckInAt = runtimeState.nextCheckInAt
@@ -1233,6 +1318,40 @@ final class TempoAppModel {
         promptSearchText = ""
         refreshCheckInPromptState()
         dismissCheckInPrompt()
+    }
+
+    private func refreshMenuBarDayAnalytics() {
+        let daySnapshot = analyticsStore.summary(
+            range: .day,
+            referenceDate: menuBarDayReferenceDate,
+            calendar: calendar,
+            dayCutoffHour: settings.analyticsDayCutoffHour
+        )
+        let workedProjectSummaries = daySnapshot.projectSummaries.filter { $0.projectID != nil }
+        let workedDuration = workedProjectSummaries.reduce(into: 0.0) { total, summary in
+            total += summary.totalDuration
+        }
+        let normalizedWorkedSummaries = workedProjectSummaries.map { summary in
+            AnalyticsProjectSummary(
+                projectID: summary.projectID,
+                projectName: summary.projectName,
+                totalDuration: summary.totalDuration,
+                percentageOfTotal: workedDuration > 0 ? summary.totalDuration / workedDuration : 0,
+                entryCount: summary.entryCount
+            )
+        }
+        let currentDayPeriod = analyticsStore.period(
+            for: .day,
+            referenceDate: clock.now,
+            calendar: calendar,
+            dayCutoffHour: settings.analyticsDayCutoffHour
+        )
+
+        menuBarDayPeriod = daySnapshot.period
+        menuBarDayWorkedDuration = workedDuration
+        menuBarDayProjectSummaries = normalizedWorkedSummaries
+        menuBarDayCheckIns = daySnapshot.checkIns
+        canShowNextMenuBarDay = daySnapshot.period.startDate < currentDayPeriod.startDate
     }
 
     nonisolated static func formattedElapsedText(for elapsedDuration: TimeInterval) -> String {

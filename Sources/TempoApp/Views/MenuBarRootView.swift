@@ -252,25 +252,44 @@ struct MenuBarRootView: View {
     private var dailySummarySection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                Button {
+                    appModel.showPreviousMenuBarDay()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
 
                 Text(summaryDateTitle)
                     .font(.system(size: 14, weight: .semibold))
                     .frame(maxWidth: .infinity)
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                Button {
+                    appModel.showNextMenuBarDay()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .disabled(!appModel.canShowNextMenuBarDay)
+                .opacity(appModel.canShowNextMenuBarDay ? 1 : 0.35)
             }
             .padding(.bottom, 2)
 
+            Text("\(TempoAppModel.formattedTrackedDuration(appModel.menuBarDayWorkedDuration)) worked")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
             if appModel.menuBarDayProjectSummaries.isEmpty {
                 ContentUnavailableView {
-                    Label("No tracked time today", systemImage: "clock.badge.questionmark")
+                    Label(noTrackedTimeTitle, systemImage: "clock.badge.questionmark")
                 } description: {
-                    Text("Today’s breakdown, total, and work hours will appear here once you log time.")
+                    Text(noTrackedTimeDescription)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
@@ -377,6 +396,22 @@ struct MenuBarRootView: View {
         }
 
         return summaryDate.formatted(.dateTime.month(.wide).day().year())
+    }
+
+    private var noTrackedTimeTitle: String {
+        if calendar.isDateInToday(appModel.menuBarDayPeriod.startDate) {
+            return "No tracked time today"
+        }
+
+        return "No tracked time in this day"
+    }
+
+    private var noTrackedTimeDescription: String {
+        if calendar.isDateInToday(appModel.menuBarDayPeriod.startDate) {
+            return "Today’s breakdown, total, and work hours will appear here once you log time."
+        }
+
+        return "This day’s breakdown, total, and work hours will appear here once records exist."
     }
 
     private var cardBackground: some ShapeStyle {
