@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import SwiftData
 import XCTest
 @testable import TempoApp
@@ -118,6 +119,70 @@ final class PersistenceModelTests: XCTestCase {
         XCTAssertNil(appModel.menuBarCountdownMinutesText(at: now))
     }
 
+    func testPersistentStoreURLUsesTempoApplicationSupportSubdirectory() {
+        let applicationSupportURL = URL(fileURLWithPath: "/tmp/TempoTests/Application Support", isDirectory: true)
+
+        let storeURL = TempoModelContainer.persistentStoreURL(applicationSupportURL: applicationSupportURL)
+
+        XCTAssertEqual(storeURL.path, "/tmp/TempoTests/Application Support/Tempo/tempo.store")
+    }
+
+    func testLegacyStoreURLsIncludePreviousDefaultStoreLocations() {
+        let applicationSupportURL = URL(fileURLWithPath: "/tmp/TempoTests/Application Support", isDirectory: true)
+
+        let legacyPaths = Set(
+            TempoModelContainer.legacyStoreURLs(applicationSupportURL: applicationSupportURL).map(\.path)
+        )
+
+        XCTAssertEqual(
+            legacyPaths,
+            [
+                "/tmp/TempoTests/Application Support/default.store",
+                "/tmp/TempoTests/Application Support/Tempo/default.store",
+                "/tmp/TempoTests/Application Support/TempoApp/default.store",
+            ]
+        )
+    }
+
+    func testCopyLegacyStoreIfNeededCopiesTempoSchemaFromLegacyDefaultStore() throws {
+        let applicationSupportURL = try makeTemporaryApplicationSupportDirectory()
+        let legacyStoreURL = applicationSupportURL.appending(path: TempoModelContainer.legacyStoreFileName, directoryHint: .notDirectory)
+        let destinationStoreURL = TempoModelContainer.persistentStoreURL(applicationSupportURL: applicationSupportURL)
+
+        try createSQLiteStore(at: legacyStoreURL, tableNames: [
+            "ZAPPSETTINGSRECORD",
+            "ZCHECKINRECORD",
+            "ZPROJECTRECORD",
+            "ZSCHEDULERSTATERECORD",
+        ])
+
+        TempoModelContainer.copyLegacyStoreIfNeeded(
+            to: destinationStoreURL,
+            applicationSupportURL: applicationSupportURL
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destinationStoreURL.path))
+        XCTAssertTrue(TempoModelContainer.appearsToBeTempoStore(at: destinationStoreURL))
+    }
+
+    func testCopyLegacyStoreIfNeededIgnoresForeignDefaultStoreSchema() throws {
+        let applicationSupportURL = try makeTemporaryApplicationSupportDirectory()
+        let legacyStoreURL = applicationSupportURL.appending(path: TempoModelContainer.legacyStoreFileName, directoryHint: .notDirectory)
+        let destinationStoreURL = TempoModelContainer.persistentStoreURL(applicationSupportURL: applicationSupportURL)
+
+        try createSQLiteStore(at: legacyStoreURL, tableNames: [
+            "ZAPIREQUESTMODEL",
+            "Z_METADATA",
+        ])
+
+        TempoModelContainer.copyLegacyStoreIfNeeded(
+            to: destinationStoreURL,
+            applicationSupportURL: applicationSupportURL
+        )
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destinationStoreURL.path))
+    }
+
     private func projectCheckIn(project: ProjectRecord, at date: Date) -> CheckInRecord {
         CheckInRecord(
             timestamp: date,
@@ -144,6 +209,30 @@ final class PersistenceModelTests: XCTestCase {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .gmt
         return calendar
+    }
+
+    private func makeTemporaryApplicationSupportDirectory() throws -> URL {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appending(path: "TempoTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let applicationSupportURL = rootURL.appending(path: "Application Support", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: applicationSupportURL, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        return applicationSupportURL
+    }
+
+    private func createSQLiteStore(at storeURL: URL, tableNames: [String]) throws {
+        var database: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(storeURL.path, &database), SQLITE_OK)
+        defer {
+            sqlite3_close(database)
+        }
+
+        for tableName in tableNames {
+            let sql = "CREATE TABLE \(tableName) (Z_PK INTEGER PRIMARY KEY);"
+            XCTAssertEqual(sqlite3_exec(database, sql, nil, nil, nil), SQLITE_OK)
+        }
     }
 }
 

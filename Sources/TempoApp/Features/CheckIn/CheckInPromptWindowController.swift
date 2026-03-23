@@ -40,7 +40,8 @@ final class CheckInPromptWindowController {
         let visibleFrame = NSScreen.main?.visibleFrame ?? screenFrame
         let anchorRect = currentMenuBarAnchorRect(in: visibleFrame)
 
-        if promptWindow == nil {
+        let isFirstShow = promptWindow == nil
+        if isFirstShow {
             promptWindow = Self.makePromptWindow(screenFrame: visibleFrame, state: state)
         }
 
@@ -56,12 +57,24 @@ final class CheckInPromptWindowController {
         }
 
         promptWindow?.setFrame(Self.promptFrame(in: visibleFrame, state: state, anchorRect: anchorRect), display: false)
-        promptWindow?.contentViewController = NSHostingController(
-            rootView: CheckInPromptView(appModel: appModel, state: state)
-        )
+
+        // Update the hosted view without replacing the controller — replacing it resets first
+        // responder on every state refresh, which is the primary cause of the focus-loss bug.
+        let newView = CheckInPromptView(appModel: appModel, state: state)
+        if let existing = promptWindow?.contentViewController as? NSHostingController<CheckInPromptView> {
+            existing.rootView = newView
+        } else {
+            promptWindow?.contentViewController = NSHostingController(rootView: newView)
+        }
 
         installActivationObserverIfNeeded()
-        bringPromptToFront()
+
+        // Only assert focus when the prompt is not already the key window. Calling
+        // bringPromptToFront() unconditionally triggers activate(ignoringOtherApps:) on every
+        // state update, causing window churn that steals key status away mid-interaction.
+        if promptWindow?.isKeyWindow != true {
+            bringPromptToFront()
+        }
     }
 
     private func promoteAppForPromptInteraction() {
@@ -105,12 +118,23 @@ final class CheckInPromptWindowController {
             return
         }
 
+        // If the prompt is already key, do nothing. This prevents a queued Task from the
+        // didResignActiveNotification observer from firing activate(ignoringOtherApps:) after
+        // the user has already clicked back into the prompt — which was the "brief blink then
+        // loses focus" symptom.
+        guard NSApplication.shared.keyWindow !== promptWindow else {
+            return
+        }
+
         bringPromptToFront()
     }
 
     private func bringPromptToFront() {
         promoteAppForPromptInteraction()
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        // Only activate if needed — redundant activate calls cause window ordering churn.
+        if !NSApplication.shared.isActive {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
         backdropWindow?.orderFrontRegardless()
         promptWindow?.orderFrontRegardless()
         promptWindow?.makeMain()
