@@ -109,6 +109,32 @@ final class TempoAppBootstrapTests: XCTestCase {
     }
 
     @MainActor
+    func testOpeningMenuBarWindowMarksScreenLockedIdleAsReturned() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let pendingIdleStart = now.addingTimeInterval(-(15 * 60))
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now)
+        )
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: pendingIdleStart,
+                kind: "idle",
+                source: "screen-locked",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try model.modelContext.save()
+
+        model.setMenuBarWindowVisible(true)
+
+        XCTAssertTrue(model.isIdlePending)
+        XCTAssertEqual(model.pendingIdleEndedAt, now)
+        XCTAssertTrue(model.checkInPromptState.isPresented)
+        XCTAssertNil(model.nextCheckInAt)
+    }
+
+    @MainActor
     func testUnansweredPromptIdleKeepsPromptVisibleUntilUserReturns() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let idleStart = now.addingTimeInterval(-(12 * 60))
@@ -410,6 +436,35 @@ final class TempoAppBootstrapTests: XCTestCase {
         try? model.modelContext.save()
 
         model.handleSceneActivation(activityDate: now)
+
+        XCTAssertTrue(model.isIdlePending)
+        XCTAssertEqual(model.pendingIdleEndedAt, now)
+        XCTAssertTrue(model.checkInPromptState.isPresented)
+        XCTAssertNil(model.nextCheckInAt)
+    }
+
+    @MainActor
+    func testHandleSceneActivationMarksScreenLockedIdleAsReturnedByDefault() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let pendingIdleStart = now.addingTimeInterval(-(15 * 60))
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now),
+            calendar: fixedBootstrapCalendar(),
+            launchAtLoginController: FixedLaunchAtLoginController(isEnabled: true)
+        )
+        model.settings.idleThresholdMinutes = 10_000
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: pendingIdleStart,
+                kind: "idle",
+                source: "screen-locked",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try model.modelContext.save()
+
+        model.handleSceneActivation()
 
         XCTAssertTrue(model.isIdlePending)
         XCTAssertEqual(model.pendingIdleEndedAt, now)

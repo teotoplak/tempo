@@ -108,6 +108,7 @@ final class TempoAppModel {
     var canShowNextMenuBarDay = false
     var analyticsExportStatusMessage: String?
     var analyticsExportErrorMessage: String?
+    var diagnosticsStatusMessage: String?
     var launchAtLoginEnabled = false
     var launchAtLoginErrorMessage: String?
     private var lastSavedPollingIntervalMinutes = 25
@@ -118,6 +119,7 @@ final class TempoAppModel {
     private let calendar: Calendar
     private let analyticsStore: AnalyticsStore
     private let csvExportService: CSVExportService
+    private let diagnosticsRecorder: TempoDiagnosticsRecorder
     private let launchAtLoginController: any LaunchAtLoginControlling
     private var hasHandledInitialLaunch = false
     private var menuBarDayReferenceDate: Date
@@ -129,6 +131,7 @@ final class TempoAppModel {
         modelContainer: ModelContainer? = nil,
         clock: any SchedulerClock = SystemSchedulerClock(),
         calendar: Calendar = .current,
+        diagnosticsRecorder: TempoDiagnosticsRecorder = TempoDiagnosticsRecorder.makeDefault(),
         launchAtLoginController: any LaunchAtLoginControlling = SMAppServiceLaunchAtLoginController()
     ) {
         let resolvedContainer = modelContainer ?? TempoModelContainer.live()
@@ -136,6 +139,7 @@ final class TempoAppModel {
         self.modelContext = ModelContext(resolvedContainer)
         self.clock = clock
         self.calendar = calendar
+        self.diagnosticsRecorder = diagnosticsRecorder
         self.launchAtLoginController = launchAtLoginController
         self.analyticsPeriod = AnalyticsPeriod(
             startDate: clock.now,
@@ -180,6 +184,7 @@ final class TempoAppModel {
         refreshRuntimeState(eventDate: clock.now)
         refreshAnalytics(referenceDate: clock.now)
         refreshCheckInPromptState()
+        trace("model-initialized", metadata: ["diagnosticsLogPath": diagnosticsLogPath])
     }
 
     func performInitialLaunchIfNeeded() {
@@ -188,6 +193,7 @@ final class TempoAppModel {
         }
 
         hasHandledInitialLaunch = true
+        trace("initial-launch-started")
         observeWorkspaceWake()
         reconcileLaunchAtLoginPreferenceWithSystem()
         recoverSchedulerState(eventDate: clock.now)
@@ -234,12 +240,27 @@ final class TempoAppModel {
 
     func handleSceneActivation(activityDate: Date? = nil) {
         let now = clock.now
-        let resolvedActivityDate = activityDate ?? currentUserActivityDate(referenceDate: now)
+        let resolvedActivityDate = activityDate ?? now
+        trace("scene-activated", metadata: ["activityDate": Self.traceTimestamp(resolvedActivityDate)])
         recoverSchedulerState(eventDate: now, activityDate: resolvedActivityDate)
     }
 
     func handleAppWake() {
+        trace("system-wake-detected")
         recoverSchedulerState(eventDate: clock.now, activityDate: clock.now)
+    }
+
+    func handleScreenWake(activityDate: Date? = nil) {
+        let referenceDate = clock.now
+        let resolvedActivityDate = activityDate ?? currentUserActivityDate(referenceDate: referenceDate)
+        trace(
+            "screen-wake-detected",
+            metadata: [
+                "activityDate": Self.traceTimestamp(resolvedActivityDate),
+                "usedExplicitActivityDate": "\(activityDate != nil)"
+            ]
+        )
+        recoverSchedulerState(eventDate: referenceDate, activityDate: resolvedActivityDate)
     }
 
     func quit() {
@@ -250,6 +271,7 @@ final class TempoAppModel {
         checkInPromptWindowController = controller
         controller.bind(appModel: self)
         controller.update(with: checkInPromptState)
+        trace("prompt-window-controller-attached")
     }
 
     func setMenuBarWindowVisible(_ isVisible: Bool) {
@@ -258,11 +280,14 @@ final class TempoAppModel {
         }
 
         isMenuBarWindowVisible = isVisible
+        trace("menu-bar-window-visibility-changed", metadata: ["isVisible": "\(isVisible)"])
 
         if isVisible {
             let now = clock.now
-            let activityDate = currentUserActivityDate(referenceDate: now)
-            recoverSchedulerState(eventDate: now, activityDate: activityDate)
+            // Opening the menu is explicit user input, so treat it as the return moment
+            // rather than relying on CGEvent idle sampling, which can stay stale across
+            // screen-lock recovery.
+            recoverSchedulerState(eventDate: now, activityDate: now)
             menuBarDayReferenceDate = now
             refreshAnalytics(referenceDate: now)
         }
@@ -275,6 +300,7 @@ final class TempoAppModel {
         let shouldPresent = isPromptOverdue || shouldPresentPendingIdlePrompt || shouldPresentUnansweredIdlePrompt
         let promptTitle = "What are you currently doing"
         let supportingSubtitle = promptSupportingSubtitle(at: clock.now)
+        let previousState = checkInPromptState
         checkInPromptState = CheckInPromptState(
             isPresented: shouldPresent,
             elapsedDuration: accountableElapsedInterval,
@@ -282,10 +308,20 @@ final class TempoAppModel {
             promptTitle: promptTitle,
             supportingSubtitle: supportingSubtitle
         )
+        if previousState != checkInPromptState {
+            trace(
+                "prompt-state-updated",
+                metadata: [
+                    "previous": previousState.traceSummary,
+                    "current": checkInPromptState.traceSummary
+                ]
+            )
+        }
         checkInPromptWindowController?.update(with: checkInPromptState)
     }
 
     func presentCheckInPromptIfNeeded() {
+        trace("present-check-in-prompt-if-needed")
         refreshCheckInPromptState()
         if checkInPromptState.isPresented,
            !isIdlePending,
@@ -298,8 +334,21 @@ final class TempoAppModel {
 
     func dismissCheckInPrompt() {
         checkInPromptState.isPresented = false
+        trace("dismiss-check-in-prompt")
         checkInPromptWindowController?.hide()
         schedulePromptTimerIfNeeded()
+    }
+
+    var diagnosticsLogPath: String {
+        diagnosticsRecorder.logFilePath ?? "Diagnostics log is unavailable in this runtime."
+    }
+
+    func revealDiagnosticsLogInFinder() {
+        let didReveal = diagnosticsRecorder.revealLogInFinder()
+        diagnosticsStatusMessage = didReveal
+            ? "Revealed diagnostics log in Finder."
+            : "Diagnostics log is unavailable in this runtime."
+        trace("reveal-diagnostics-log", metadata: ["didReveal": "\(didReveal)"])
     }
 
     var currentProjectContextLabel: String {
@@ -642,6 +691,7 @@ final class TempoAppModel {
     }
 
     func handleScreenLock() {
+        trace("handle-screen-lock")
         guard latestCheckInRecord()?.kind != "idle" else {
             refreshRuntimeState(eventDate: clock.now)
             return
@@ -661,6 +711,7 @@ final class TempoAppModel {
     }
 
     func handleIdleReturn() {
+        trace("handle-idle-return")
         refreshRuntimeState(eventDate: clock.now, activityDate: clock.now)
         refreshCheckInPromptState()
         presentCheckInPromptIfNeeded()
@@ -937,6 +988,7 @@ final class TempoAppModel {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
+                self?.trace("workspace-notification", metadata: ["name": "didWake"])
                 self?.handleAppWake()
             }
         }
@@ -947,6 +999,7 @@ final class TempoAppModel {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
+                self?.trace("workspace-notification", metadata: ["name": "sessionDidResignActive"])
                 self?.handleScreenLock()
             }
         })
@@ -956,7 +1009,18 @@ final class TempoAppModel {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
+                self?.trace("workspace-notification", metadata: ["name": "screensDidSleep"])
                 self?.handleScreenLock()
+            }
+        })
+        workspaceObservers.append(notificationCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.trace("workspace-notification", metadata: ["name": "screensDidWake"])
+                self?.handleScreenWake()
             }
         })
         workspaceObservers.append(notificationCenter.addObserver(
@@ -965,12 +1029,21 @@ final class TempoAppModel {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
+                self?.trace("workspace-notification", metadata: ["name": "sessionDidBecomeActive"])
                 self?.handleIdleReturn()
             }
         })
+        trace("workspace-observers-installed")
     }
 
     func recoverSchedulerState(eventDate: Date, activityDate: Date? = nil) {
+        trace(
+            "recover-scheduler-state",
+            metadata: [
+                "eventDate": Self.traceTimestamp(eventDate),
+                "activityDate": Self.traceTimestamp(activityDate)
+            ]
+        )
         refreshRuntimeState(eventDate: eventDate, activityDate: activityDate)
         refreshCheckInPromptState()
         launchState = .ready
@@ -1088,6 +1161,18 @@ final class TempoAppModel {
     }
 
     private func apply(runtimeState: DerivedRuntimeState) {
+        let previousState = DerivedRuntimeState(
+            nextCheckInAt: nextCheckInAt,
+            isPromptOverdue: isPromptOverdue,
+            accountableElapsedInterval: accountableElapsedInterval,
+            isSilenced: isSilenced,
+            silenceEndsAt: silenceEndsAt,
+            isIdlePending: isIdlePending,
+            pendingIdleStartedAt: pendingIdleStartedAt,
+            pendingIdleEndedAt: pendingIdleEndedAt,
+            pendingIdleReason: pendingIdleReason
+        )
+
         nextCheckInAt = runtimeState.nextCheckInAt
         isPromptOverdue = runtimeState.isPromptOverdue
         accountableElapsedInterval = runtimeState.accountableElapsedInterval
@@ -1117,6 +1202,16 @@ final class TempoAppModel {
 
         if modelContext.hasChanges {
             try? modelContext.save()
+        }
+
+        if previousState != runtimeState {
+            trace(
+                "runtime-state-applied",
+                metadata: [
+                    "previous": previousState.traceSummary,
+                    "current": runtimeState.traceSummary
+                ]
+            )
         }
 
         schedulePromptTimerIfNeeded()
@@ -1169,15 +1264,30 @@ final class TempoAppModel {
         scheduledPromptTimer = nil
 
         guard let nextRuntimeUpdateAt = nextRuntimeUpdateAt(referenceDate: clock.now) else {
+            trace("runtime-timer-cleared", metadata: ["reason": "no-next-update"])
             return
         }
 
         let interval = nextRuntimeUpdateAt.timeIntervalSince(clock.now)
         guard interval > 0 else {
+            trace(
+                "runtime-timer-fired-immediately",
+                metadata: [
+                    "fireAt": Self.traceTimestamp(nextRuntimeUpdateAt),
+                    "intervalSeconds": Self.traceInterval(interval)
+                ]
+            )
             handleScheduledPromptTimerFired()
             return
         }
 
+        trace(
+            "runtime-timer-scheduled",
+            metadata: [
+                "fireAt": Self.traceTimestamp(nextRuntimeUpdateAt),
+                "intervalSeconds": Self.traceInterval(interval)
+            ]
+        )
         scheduledPromptTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.handleScheduledPromptTimerFired()
@@ -1188,6 +1298,7 @@ final class TempoAppModel {
     private func handleScheduledPromptTimerFired() {
         scheduledPromptTimer?.invalidate()
         scheduledPromptTimer = nil
+        trace("runtime-timer-fired")
         if handlePromptIdleThresholdReachedIfNeeded(referenceDate: clock.now) {
             return
         }
@@ -1281,6 +1392,10 @@ final class TempoAppModel {
             source: "unanswered-prompt"
         )
         try? modelContext.save()
+        trace(
+            "prompt-idle-threshold-reached",
+            metadata: ["promptIdleMarkAt": Self.traceTimestamp(promptIdleMarkAt)]
+        )
 
         refreshRuntimeState(eventDate: referenceDate)
         promptSearchText = ""
@@ -1293,10 +1408,19 @@ final class TempoAppModel {
     private func currentUserActivityDate(referenceDate: Date) -> Date {
         let idleSeconds = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .null)
         guard idleSeconds.isFinite, idleSeconds >= 0 else {
+            trace("activity-sample-invalid", metadata: ["idleSeconds": "\(idleSeconds)"])
             return referenceDate
         }
 
-        return referenceDate.addingTimeInterval(-idleSeconds)
+        let activityDate = referenceDate.addingTimeInterval(-idleSeconds)
+        trace(
+            "activity-sampled",
+            metadata: [
+                "idleSeconds": Self.traceInterval(idleSeconds),
+                "activityDate": Self.traceTimestamp(activityDate)
+            ]
+        )
+        return activityDate
     }
 
     private func pendingIdleDuration(at date: Date) -> TimeInterval {
@@ -1318,6 +1442,34 @@ final class TempoAppModel {
         promptSearchText = ""
         refreshCheckInPromptState()
         dismissCheckInPrompt()
+    }
+
+    func recordPromptWindowEvent(_ event: String, metadata: [String: String] = [:]) {
+        diagnosticsRecorder.record(component: "CheckInPromptWindowController", event: event, metadata: metadata)
+    }
+
+    private func trace(_ event: String, metadata: [String: String] = [:]) {
+        diagnosticsRecorder.record(
+            component: "TempoAppModel",
+            event: event,
+            metadata: metadata.merging(runtimeTraceMetadata()) { _, new in new }
+        )
+    }
+
+    private func runtimeTraceMetadata() -> [String: String] {
+        [
+            "launchState": launchState.rawValue,
+            "nextCheckInAt": Self.traceTimestamp(nextCheckInAt),
+            "isPromptOverdue": "\(isPromptOverdue)",
+            "accountableElapsedSeconds": Self.traceInterval(accountableElapsedInterval),
+            "isSilenced": "\(isSilenced)",
+            "silenceEndsAt": Self.traceTimestamp(silenceEndsAt),
+            "isIdlePending": "\(isIdlePending)",
+            "pendingIdleStartedAt": Self.traceTimestamp(pendingIdleStartedAt),
+            "pendingIdleEndedAt": Self.traceTimestamp(pendingIdleEndedAt),
+            "pendingIdleReason": pendingIdleReason ?? "nil",
+            "promptPresented": "\(checkInPromptState.isPresented)"
+        ]
     }
 
     private func refreshMenuBarDayAnalytics() {
@@ -1382,6 +1534,18 @@ final class TempoAppModel {
         return String(format: "%02d:%02d", hours, minutes)
     }
 
+    nonisolated static func traceTimestamp(_ date: Date?) -> String {
+        guard let date else {
+            return "nil"
+        }
+
+        return String(format: "%.3f", date.timeIntervalSince1970)
+    }
+
+    nonisolated static func traceInterval(_ interval: TimeInterval) -> String {
+        String(format: "%.3f", interval)
+    }
+
     nonisolated private static func supportingSubtitle(
         elapsedDuration: TimeInterval,
         isOverdue: Bool
@@ -1399,6 +1563,33 @@ final class TempoAppModel {
         reason: String
     ) -> String {
         "\(reason) for \(formattedCompactDuration(duration))"
+    }
+}
+
+private extension DerivedRuntimeState {
+    var traceSummary: String {
+        [
+            "nextCheckInAt=\(TempoAppModel.traceTimestamp(nextCheckInAt))",
+            "isPromptOverdue=\(isPromptOverdue)",
+            "accountableElapsedSeconds=\(TempoAppModel.traceInterval(accountableElapsedInterval))",
+            "isSilenced=\(isSilenced)",
+            "silenceEndsAt=\(TempoAppModel.traceTimestamp(silenceEndsAt))",
+            "isIdlePending=\(isIdlePending)",
+            "pendingIdleStartedAt=\(TempoAppModel.traceTimestamp(pendingIdleStartedAt))",
+            "pendingIdleEndedAt=\(TempoAppModel.traceTimestamp(pendingIdleEndedAt))",
+            "pendingIdleReason=\(pendingIdleReason ?? "nil")"
+        ].joined(separator: ",")
+    }
+}
+
+private extension CheckInPromptState {
+    var traceSummary: String {
+        [
+            "isPresented=\(isPresented)",
+            "elapsedSeconds=\(TempoAppModel.traceInterval(elapsedDuration))",
+            "isOverdue=\(isOverdue)",
+            "subtitle=\(supportingSubtitle)"
+        ].joined(separator: ",")
     }
 }
 

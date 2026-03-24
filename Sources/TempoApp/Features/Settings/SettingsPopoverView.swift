@@ -46,6 +46,27 @@ struct SettingsPopoverView: View {
                         .foregroundStyle(.red)
                 }
             }
+
+            Section("Diagnostics") {
+                Button("Reveal Trace Log in Finder") {
+                    appModel.revealDiagnosticsLogInFinder()
+                }
+
+                Text(appModel.diagnosticsLogPath)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+
+                Text("Tempo keeps a rolling trace of lock, wake, timer, and prompt-window events for troubleshooting.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let diagnosticsStatusMessage = appModel.diagnosticsStatusMessage {
+                    Text(diagnosticsStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
         .onChange(of: appModel.settings.pollingIntervalMinutes) { _, _ in persistSettings() }

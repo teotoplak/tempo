@@ -14,6 +14,7 @@ final class CheckInPromptWindowController {
 
     func bind(appModel: TempoAppModel) {
         self.appModel = appModel
+        trace("bound-to-app-model")
     }
 
     func update(with state: CheckInPromptState) {
@@ -25,6 +26,7 @@ final class CheckInPromptWindowController {
     }
 
     func hide() {
+        trace("hide", metadata: ["promptFrame": Self.traceRect(promptWindow?.frame)])
         promptWindow?.orderOut(nil)
         backdropWindow?.orderOut(nil)
         removeActivationObserver()
@@ -39,15 +41,26 @@ final class CheckInPromptWindowController {
         let screenFrame = NSScreen.main?.frame ?? .zero
         let visibleFrame = NSScreen.main?.visibleFrame ?? screenFrame
         let anchorRect = currentMenuBarAnchorRect(in: visibleFrame)
+        trace(
+            "show",
+            metadata: [
+                "state": Self.tracePromptState(state),
+                "screenFrame": Self.traceRect(screenFrame),
+                "visibleFrame": Self.traceRect(visibleFrame),
+                "anchorRect": Self.traceRect(anchorRect)
+            ]
+        )
 
         let isFirstShow = promptWindow == nil
         if isFirstShow {
             promptWindow = Self.makePromptWindow(screenFrame: visibleFrame, state: state)
+            trace("prompt-window-created", metadata: ["frame": Self.traceRect(promptWindow?.frame)])
         }
 
         if Self.wantsBackdrop(for: state) {
             if backdropWindow == nil {
                 backdropWindow = Self.makeBackdropWindow(screenFrame: screenFrame)
+                trace("backdrop-window-created", metadata: ["frame": Self.traceRect(backdropWindow?.frame)])
             }
 
             backdropWindow?.setFrame(screenFrame, display: false)
@@ -126,6 +139,7 @@ final class CheckInPromptWindowController {
             return
         }
 
+        trace("reasserting-prompt-focus")
         bringPromptToFront()
     }
 
@@ -139,6 +153,14 @@ final class CheckInPromptWindowController {
         promptWindow?.orderFrontRegardless()
         promptWindow?.makeMain()
         promptWindow?.makeKeyAndOrderFront(nil)
+        trace(
+            "bring-to-front",
+            metadata: [
+                "isAppActive": "\(NSApplication.shared.isActive)",
+                "isPromptKey": "\(promptWindow?.isKeyWindow == true)",
+                "promptFrame": Self.traceRect(promptWindow?.frame)
+            ]
+        )
     }
 
     private func currentMenuBarAnchorRect(in visibleFrame: CGRect) -> CGRect? {
@@ -222,6 +244,27 @@ final class CheckInPromptWindowController {
 
     static func wantsBackdrop(for state: CheckInPromptState) -> Bool {
         state.isPresented
+    }
+
+    private func trace(_ event: String, metadata: [String: String] = [:]) {
+        appModel?.recordPromptWindowEvent(event, metadata: metadata)
+    }
+
+    private static func traceRect(_ rect: CGRect?) -> String {
+        guard let rect else {
+            return "nil"
+        }
+
+        return NSStringFromRect(rect)
+    }
+
+    private static func tracePromptState(_ state: CheckInPromptState) -> String {
+        [
+            "isPresented=\(state.isPresented)",
+            "elapsedSeconds=\(TempoAppModel.traceInterval(state.elapsedDuration))",
+            "isOverdue=\(state.isOverdue)",
+            "subtitle=\(state.supportingSubtitle)"
+        ].joined(separator: ",")
     }
 }
 
