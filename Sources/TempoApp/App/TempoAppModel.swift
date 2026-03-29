@@ -328,6 +328,7 @@ final class TempoAppModel {
            promptPresentedAt == nil {
             promptPresentedAt = clock.now
             refreshCheckInPromptState()
+            schedulePromptTimerIfNeeded()
         }
         checkInPromptWindowController?.update(with: checkInPromptState)
     }
@@ -1130,13 +1131,32 @@ final class TempoAppModel {
 
         if idleKind == .doneForDay {
             let silenceEndsAt = nextDayCutoff(after: latestCheckIn.timestamp, dayCutoffHour: settings.analyticsDayCutoffHour)
-            let isSilenced = eventDate < silenceEndsAt
+            if eventDate < silenceEndsAt {
+                return DerivedRuntimeState(
+                    nextCheckInAt: nil,
+                    isPromptOverdue: false,
+                    accountableElapsedInterval: 0,
+                    isSilenced: true,
+                    silenceEndsAt: silenceEndsAt,
+                    isIdlePending: false,
+                    pendingIdleStartedAt: nil,
+                    pendingIdleEndedAt: nil,
+                    pendingIdleReason: nil
+                )
+            }
+
+            let nextCheckInAt = silenceEndsAt.addingTimeInterval(pollingInterval)
+            let isPromptOverdue = eventDate >= nextCheckInAt
+            let accountableElapsedInterval = isPromptOverdue
+                ? max(eventDate.timeIntervalSince(silenceEndsAt), pollingInterval)
+                : pollingInterval
+
             return DerivedRuntimeState(
-                nextCheckInAt: nil,
-                isPromptOverdue: false,
-                accountableElapsedInterval: 0,
-                isSilenced: isSilenced,
-                silenceEndsAt: isSilenced ? silenceEndsAt : nil,
+                nextCheckInAt: nextCheckInAt,
+                isPromptOverdue: isPromptOverdue,
+                accountableElapsedInterval: accountableElapsedInterval,
+                isSilenced: false,
+                silenceEndsAt: nil,
                 isIdlePending: false,
                 pendingIdleStartedAt: nil,
                 pendingIdleEndedAt: nil,
@@ -1331,11 +1351,11 @@ final class TempoAppModel {
     }
 
     private var promptIdleMarkAt: Date? {
-        guard isPromptOverdue, !isIdlePending, let nextCheckInAt else {
+        guard isPromptOverdue, !isIdlePending, let promptPresentedAt else {
             return nil
         }
 
-        return nextCheckInAt.addingTimeInterval(TimeInterval(settings.idleThresholdMinutes * 60))
+        return promptPresentedAt.addingTimeInterval(TimeInterval(settings.idleThresholdMinutes * 60))
     }
 
     func promptSupportingSubtitle(at date: Date) -> String {

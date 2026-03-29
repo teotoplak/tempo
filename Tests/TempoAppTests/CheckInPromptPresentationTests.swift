@@ -126,7 +126,24 @@ final class CheckInPromptPresentationTests: XCTestCase {
         appModel.accountableElapsedInterval = 25 * 60
         appModel.presentCheckInPromptIfNeeded()
 
-        XCTAssertEqual(appModel.nextRuntimeUpdateAt(referenceDate: now), now.addingTimeInterval(10 * 60))
+        XCTAssertEqual(appModel.nextRuntimeUpdateAt(referenceDate: now), now.addingTimeInterval(5 * 60))
+    }
+
+    @MainActor
+    func testNextRuntimeUpdateDoesNotBackdateIdleDeadlineBeforePromptIsShown() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedPresentationClock(now: now),
+            calendar: fixedPresentationCalendar(),
+            launchAtLoginController: FixedPresentationLaunchAtLoginController(isEnabled: false)
+        )
+
+        appModel.nextCheckInAt = now.addingTimeInterval(-(60 * 60))
+        appModel.isPromptOverdue = true
+        appModel.accountableElapsedInterval = 85 * 60
+
+        XCTAssertNil(appModel.nextRuntimeUpdateAt(referenceDate: now))
     }
 
     @MainActor

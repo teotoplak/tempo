@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-final class TempoDiagnosticsRecorder {
+final class TempoDiagnosticsRecorder: @unchecked Sendable {
     private struct Entry: Encodable {
         let timestamp: String
         let component: String
@@ -9,8 +9,7 @@ final class TempoDiagnosticsRecorder {
         let metadata: [String: String]
     }
 
-    private let fileManager = FileManager.default
-    private let encoder = JSONEncoder()
+    private let lock = NSLock()
     private let maxFileSizeBytes: UInt64
 
     let logDirectoryURL: URL?
@@ -54,39 +53,46 @@ final class TempoDiagnosticsRecorder {
             return
         }
 
-        prepareLogDirectoryIfNeeded()
-        rotateLogIfNeeded()
+        lock.lock()
+        defer { lock.unlock() }
 
-        let entry = Entry(
-            timestamp: Self.traceTimestamp(Date()),
-            component: component,
-            event: event,
-            metadata: metadata
-        )
+        autoreleasepool {
+            let fileManager = FileManager()
+            prepareLogDirectoryIfNeeded(fileManager: fileManager)
+            rotateLogIfNeeded(fileManager: fileManager)
 
-        guard var data = try? encoder.encode(entry) else {
-            return
-        }
+            let entry = Entry(
+                timestamp: Self.traceTimestamp(Date()),
+                component: component,
+                event: event,
+                metadata: metadata
+            )
 
-        data.append(0x0A)
+            let encoder = JSONEncoder()
+            guard var data = try? encoder.encode(entry) else {
+                return
+            }
 
-        if !fileManager.fileExists(atPath: logFileURL.path) {
-            fileManager.createFile(atPath: logFileURL.path, contents: nil)
-        }
+            data.append(0x0A)
 
-        guard let fileHandle = try? FileHandle(forWritingTo: logFileURL) else {
-            return
-        }
+            if !fileManager.fileExists(atPath: logFileURL.path) {
+                fileManager.createFile(atPath: logFileURL.path, contents: nil)
+            }
 
-        defer {
-            try? fileHandle.close()
-        }
+            guard let fileHandle = try? FileHandle(forWritingTo: logFileURL) else {
+                return
+            }
 
-        do {
-            try fileHandle.seekToEnd()
-            try fileHandle.write(contentsOf: data)
-        } catch {
-            return
+            defer {
+                try? fileHandle.close()
+            }
+
+            do {
+                try fileHandle.seekToEnd()
+                try fileHandle.write(contentsOf: data)
+            } catch {
+                return
+            }
         }
     }
 
@@ -96,7 +102,11 @@ final class TempoDiagnosticsRecorder {
             return false
         }
 
-        prepareLogDirectoryIfNeeded()
+        lock.lock()
+        defer { lock.unlock() }
+
+        let fileManager = FileManager()
+        prepareLogDirectoryIfNeeded(fileManager: fileManager)
         if !fileManager.fileExists(atPath: logFileURL.path) {
             fileManager.createFile(atPath: logFileURL.path, contents: nil)
         }
@@ -106,6 +116,10 @@ final class TempoDiagnosticsRecorder {
     }
 
     private func prepareLogDirectoryIfNeeded() {
+        prepareLogDirectoryIfNeeded(fileManager: FileManager())
+    }
+
+    private func prepareLogDirectoryIfNeeded(fileManager: FileManager) {
         guard let logDirectoryURL else {
             return
         }
@@ -114,6 +128,10 @@ final class TempoDiagnosticsRecorder {
     }
 
     private func rotateLogIfNeeded() {
+        rotateLogIfNeeded(fileManager: FileManager())
+    }
+
+    private func rotateLogIfNeeded(fileManager: FileManager) {
         guard
             let logFileURL,
             let archivedLogFileURL,

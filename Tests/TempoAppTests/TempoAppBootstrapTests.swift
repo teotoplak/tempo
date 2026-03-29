@@ -473,6 +473,57 @@ final class TempoAppBootstrapTests: XCTestCase {
     }
 
     @MainActor
+    func testRecoverSchedulerStateTurnsExpiredDoneForDayIntoOverduePrompt() throws {
+        let calendar = fixedBootstrapCalendar()
+        let doneForDayAt = calendar.date(from: DateComponents(
+            timeZone: .gmt,
+            year: 2026,
+            month: 3,
+            day: 28,
+            hour: 18
+        ))!
+        let now = calendar.date(from: DateComponents(
+            timeZone: .gmt,
+            year: 2026,
+            month: 3,
+            day: 29,
+            hour: 9
+        ))!
+        let expectedNextCheckInAt = calendar.date(from: DateComponents(
+            timeZone: .gmt,
+            year: 2026,
+            month: 3,
+            day: 29,
+            hour: 6,
+            minute: 25
+        ))!
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now),
+            calendar: calendar,
+            launchAtLoginController: FixedLaunchAtLoginController(isEnabled: true)
+        )
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: doneForDayAt,
+                kind: "idle",
+                source: "done-for-day",
+                idleKind: TimeAllocationIdleKind.doneForDay.rawValue
+            )
+        )
+        try model.modelContext.save()
+
+        model.recoverSchedulerState(eventDate: now)
+
+        XCTAssertFalse(model.isSilenced)
+        XCTAssertNil(model.silenceEndsAt)
+        XCTAssertEqual(model.nextCheckInAt, expectedNextCheckInAt)
+        XCTAssertTrue(model.isPromptOverdue)
+        XCTAssertTrue(model.checkInPromptState.isPresented)
+        XCTAssertEqual(model.accountableElapsedInterval, 3 * 60 * 60)
+    }
+
+    @MainActor
     func testRecoverSchedulerStateHealsStalePendingIdleWhenNewerProjectCheckInExists() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let projectCheckInAt = now.addingTimeInterval(-(5 * 60))

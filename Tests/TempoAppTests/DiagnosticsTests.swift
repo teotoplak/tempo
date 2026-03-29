@@ -3,6 +3,29 @@ import XCTest
 @testable import TempoApp
 
 final class DiagnosticsTests: XCTestCase {
+    func testRecorderHandlesConcurrentWritesWhileRotating() throws {
+        let diagnosticsDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let recorder = TempoDiagnosticsRecorder(baseDirectoryURL: diagnosticsDirectory, maxFileSizeBytes: 256)
+
+        DispatchQueue.concurrentPerform(iterations: 64) { index in
+            recorder.record(
+                component: "DiagnosticsTests",
+                event: "concurrent-write",
+                metadata: ["index": "\(index)", "payload": String(repeating: "x", count: 64)]
+            )
+        }
+
+        let logFileURL = try XCTUnwrap(recorder.logFileURL)
+        let archivedLogFileURL = try XCTUnwrap(recorder.archivedLogFileURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: logFileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archivedLogFileURL.path))
+
+        let currentContents = try String(contentsOf: logFileURL, encoding: .utf8)
+        let archivedContents = try String(contentsOf: archivedLogFileURL, encoding: .utf8)
+        XCTAssertFalse(currentContents.isEmpty)
+        XCTAssertFalse(archivedContents.isEmpty)
+    }
+
     @MainActor
     func testScreenLockAndIdleReturnWriteDiagnosticsTrace() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
