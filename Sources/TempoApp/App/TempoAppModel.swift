@@ -126,6 +126,7 @@ final class TempoAppModel {
     private var workspaceObservers: [NSObjectProtocol] = []
     private var checkInPromptWindowController: CheckInPromptWindowController?
     private var scheduledPromptTimer: Timer?
+    private var hasQueuedImmediatePromptTimerFire = false
 
     init(
         modelContainer: ModelContainer? = nil,
@@ -196,7 +197,7 @@ final class TempoAppModel {
         trace("initial-launch-started")
         observeWorkspaceWake()
         reconcileLaunchAtLoginPreferenceWithSystem()
-        recoverSchedulerState(eventDate: clock.now)
+        recoverSchedulerState(eventDate: clock.now, allowScreenLockReturnFallback: true)
         refreshAnalytics(referenceDate: clock.now)
         presentLaunchCheckInPrompt()
     }
@@ -252,15 +253,33 @@ final class TempoAppModel {
 
     func handleScreenWake(activityDate: Date? = nil) {
         let referenceDate = clock.now
-        let resolvedActivityDate = activityDate ?? currentUserActivityDate(referenceDate: referenceDate)
+        let sampledActivityDate = activityDate ?? currentUserActivityDate(referenceDate: referenceDate)
+        let shouldFallbackToImmediateReturn: Bool
+        if
+            let latestCheckIn = latestCheckInRecord(),
+            latestCheckIn.kind == "idle",
+            latestCheckIn.source == "screen-locked",
+            sampledActivityDate <= latestCheckIn.timestamp
+        {
+            shouldFallbackToImmediateReturn = true
+        } else {
+            shouldFallbackToImmediateReturn = false
+        }
+
+        let resolvedActivityDate = shouldFallbackToImmediateReturn ? referenceDate : sampledActivityDate
         trace(
             "screen-wake-detected",
             metadata: [
                 "activityDate": Self.traceTimestamp(resolvedActivityDate),
-                "usedExplicitActivityDate": "\(activityDate != nil)"
+                "usedExplicitActivityDate": "\(activityDate != nil)",
+                "usedScreenLockReturnFallback": "\(shouldFallbackToImmediateReturn)"
             ]
         )
-        recoverSchedulerState(eventDate: referenceDate, activityDate: resolvedActivityDate)
+        recoverSchedulerState(
+            eventDate: referenceDate,
+            activityDate: resolvedActivityDate,
+            allowScreenLockReturnFallback: true
+        )
     }
 
     func quit() {
@@ -1037,24 +1056,47 @@ final class TempoAppModel {
         trace("workspace-observers-installed")
     }
 
-    func recoverSchedulerState(eventDate: Date, activityDate: Date? = nil) {
+    func recoverSchedulerState(
+        eventDate: Date,
+        activityDate: Date? = nil,
+        allowScreenLockReturnFallback: Bool = false
+    ) {
         trace(
             "recover-scheduler-state",
             metadata: [
                 "eventDate": Self.traceTimestamp(eventDate),
-                "activityDate": Self.traceTimestamp(activityDate)
+                "activityDate": Self.traceTimestamp(activityDate),
+                "allowScreenLockReturnFallback": "\(allowScreenLockReturnFallback)"
             ]
         )
-        refreshRuntimeState(eventDate: eventDate, activityDate: activityDate)
+        refreshRuntimeState(
+            eventDate: eventDate,
+            activityDate: activityDate,
+            allowScreenLockReturnFallback: allowScreenLockReturnFallback
+        )
         refreshCheckInPromptState()
         launchState = .ready
     }
 
-    private func refreshRuntimeState(eventDate: Date, activityDate: Date? = nil) {
-        apply(runtimeState: deriveRuntimeState(eventDate: eventDate, activityDate: activityDate))
+    private func refreshRuntimeState(
+        eventDate: Date,
+        activityDate: Date? = nil,
+        allowScreenLockReturnFallback: Bool = false
+    ) {
+        apply(
+            runtimeState: deriveRuntimeState(
+                eventDate: eventDate,
+                activityDate: activityDate,
+                allowScreenLockReturnFallback: allowScreenLockReturnFallback
+            )
+        )
     }
 
-    private func deriveRuntimeState(eventDate: Date, activityDate: Date? = nil) -> DerivedRuntimeState {
+    private func deriveRuntimeState(
+        eventDate: Date,
+        activityDate: Date? = nil,
+        allowScreenLockReturnFallback: Bool = false
+    ) -> DerivedRuntimeState {
         let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
 
         guard let latestCheckIn = latestCheckInRecord() else {
@@ -1164,7 +1206,17 @@ final class TempoAppModel {
             )
         }
 
-        let resolvedActivityDate = activityDate ?? currentUserActivityDate(referenceDate: eventDate)
+        let sampledActivityDate = activityDate ?? currentUserActivityDate(referenceDate: eventDate)
+        let resolvedActivityDate: Date
+        if
+            allowScreenLockReturnFallback,
+            latestCheckIn.source == "screen-locked",
+            sampledActivityDate <= latestCheckIn.timestamp
+        {
+            resolvedActivityDate = eventDate
+        } else {
+            resolvedActivityDate = sampledActivityDate
+        }
         let pendingIdleEndedAt = resolvedActivityDate > latestCheckIn.timestamp ? resolvedActivityDate : nil
 
         return DerivedRuntimeState(
@@ -1297,7 +1349,19 @@ final class TempoAppModel {
                     "intervalSeconds": Self.traceInterval(interval)
                 ]
             )
-            handleScheduledPromptTimerFired()
+            guard !hasQueuedImmediatePromptTimerFire else {
+                return
+            }
+
+            hasQueuedImmediatePromptTimerFire = true
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    return
+                }
+
+                self.hasQueuedImmediatePromptTimerFire = false
+                self.handleScheduledPromptTimerFired()
+            }
             return
         }
 
@@ -1316,6 +1380,7 @@ final class TempoAppModel {
     }
 
     private func handleScheduledPromptTimerFired() {
+        hasQueuedImmediatePromptTimerFire = false
         scheduledPromptTimer?.invalidate()
         scheduledPromptTimer = nil
         trace("runtime-timer-fired")

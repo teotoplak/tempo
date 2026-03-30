@@ -387,6 +387,35 @@ final class TempoAppBootstrapTests: XCTestCase {
     }
 
     @MainActor
+    func testPerformInitialLaunchMarksScreenLockedIdleAsReturned() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let pendingIdleStart = now.addingTimeInterval(-(15 * 60))
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedBootstrapClock(now: now),
+            calendar: fixedBootstrapCalendar(),
+            launchAtLoginController: FixedLaunchAtLoginController(isEnabled: false)
+        )
+        model.modelContext.insert(
+            CheckInRecord(
+                timestamp: pendingIdleStart,
+                kind: "idle",
+                source: "screen-locked",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try model.modelContext.save()
+
+        model.performInitialLaunchIfNeeded()
+
+        XCTAssertTrue(model.isIdlePending)
+        XCTAssertEqual(model.pendingIdleStartedAt, pendingIdleStart)
+        XCTAssertEqual(model.pendingIdleEndedAt, now)
+        XCTAssertTrue(model.checkInPromptState.isPresented)
+        XCTAssertNil(model.nextCheckInAt)
+    }
+
+    @MainActor
     func testHandleSceneActivationRecoversOverduePromptAfterRelaunch() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = TempoAppModel(

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftData
 import XCTest
 @testable import TempoApp
 
@@ -209,10 +210,47 @@ final class CheckInPromptPresentationTests: XCTestCase {
         XCTAssertTrue(controller.promptWindow?.isVisible ?? false)
         controller.hide()
     }
+
+    @MainActor
+    func testDismissingOverduePromptDefersImmediateIdleThresholdHandling() async throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let clock = MutablePresentationClock(now: now)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: clock,
+            calendar: fixedPresentationCalendar(),
+            launchAtLoginController: FixedPresentationLaunchAtLoginController(isEnabled: false)
+        )
+
+        appModel.nextCheckInAt = now.addingTimeInterval(-60)
+        appModel.isPromptOverdue = true
+        appModel.accountableElapsedInterval = 26 * 60
+        appModel.presentCheckInPromptIfNeeded()
+
+        clock.now = now.addingTimeInterval(TimeInterval(appModel.settings.idleThresholdMinutes * 60 + 1))
+        appModel.dismissCheckInPrompt()
+
+        XCTAssertTrue(try appModel.modelContext.fetch(FetchDescriptor<CheckInRecord>()).isEmpty)
+
+        await Task.yield()
+
+        let descriptor = FetchDescriptor<CheckInRecord>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        let records = try appModel.modelContext.fetch(descriptor)
+        XCTAssertEqual(records.first?.kind, "idle")
+        XCTAssertEqual(records.first?.source, "unanswered-prompt")
+    }
 }
 
 private struct FixedPresentationClock: SchedulerClock {
     let now: Date
+}
+
+private final class MutablePresentationClock: SchedulerClock {
+    var now: Date
+
+    init(now: Date) {
+        self.now = now
+    }
 }
 
 @MainActor
