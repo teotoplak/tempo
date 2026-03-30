@@ -117,6 +117,7 @@ final class TempoAppModel {
 
     private let clock: any SchedulerClock
     private let calendar: Calendar
+    private let checkInTriggerEngine: CheckInTriggerEngine
     private let analyticsStore: AnalyticsStore
     private let csvExportService: CSVExportService
     private let diagnosticsRecorder: TempoDiagnosticsRecorder
@@ -140,6 +141,7 @@ final class TempoAppModel {
         self.modelContext = ModelContext(resolvedContainer)
         self.clock = clock
         self.calendar = calendar
+        self.checkInTriggerEngine = CheckInTriggerEngine(calendar: calendar)
         self.diagnosticsRecorder = diagnosticsRecorder
         self.launchAtLoginController = launchAtLoginController
         self.analyticsPeriod = AnalyticsPeriod(
@@ -716,15 +718,12 @@ final class TempoAppModel {
             refreshRuntimeState(eventDate: clock.now)
             return
         }
-
-        persistIdleCheckIn(
-            at: clock.now,
-            idleKind: .automaticThreshold,
-            source: "screen-locked"
+        let decision = checkInTriggerEngine.decide(
+            signal: .screenLocked(at: clock.now),
+            context: makeCheckInTriggerContext()
         )
-        try? modelContext.save()
-
-        refreshRuntimeState(eventDate: clock.now)
+        applyTriggerEffects(decision.effects)
+        apply(runtimeState: decision.runtimeState)
         promptSearchText = ""
         refreshCheckInPromptState()
         dismissCheckInPrompt()
@@ -1097,138 +1096,119 @@ final class TempoAppModel {
         activityDate: Date? = nil,
         allowScreenLockReturnFallback: Bool = false
     ) -> DerivedRuntimeState {
-        let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
+        let decision = checkInTriggerEngine.decide(
+            signal: .recover(
+                eventDate: eventDate,
+                activityDate: activityDateForTriggerRecovery(
+                    eventDate: eventDate,
+                    explicitActivityDate: activityDate
+                ),
+                allowScreenLockReturnFallback: allowScreenLockReturnFallback
+            ),
+            context: makeCheckInTriggerContext()
+        )
 
-        guard let latestCheckIn = latestCheckInRecord() else {
-            if let scheduledCheckInAt = schedulerStateRecord.nextCheckInAt ?? nextCheckInAt {
-                let isPromptOverdue = eventDate >= scheduledCheckInAt
-                let referenceStart = scheduledCheckInAt.addingTimeInterval(-pollingInterval)
-                let accountableElapsedInterval = isPromptOverdue
-                    ? max(eventDate.timeIntervalSince(referenceStart), pollingInterval)
-                    : pollingInterval
+        return decision.runtimeState
+    }
 
-                return DerivedRuntimeState(
-                    nextCheckInAt: scheduledCheckInAt,
-                    isPromptOverdue: isPromptOverdue,
-                    accountableElapsedInterval: accountableElapsedInterval,
-                    isSilenced: false,
-                    silenceEndsAt: nil,
-                    isIdlePending: false,
-                    pendingIdleStartedAt: nil,
-                    pendingIdleEndedAt: nil,
-                    pendingIdleReason: nil
-                )
-            }
-
-            return DerivedRuntimeState(
-                nextCheckInAt: eventDate.addingTimeInterval(pollingInterval),
-                isPromptOverdue: false,
-                accountableElapsedInterval: pollingInterval,
-                isSilenced: false,
-                silenceEndsAt: nil,
-                isIdlePending: false,
-                pendingIdleStartedAt: nil,
-                pendingIdleEndedAt: nil,
-                pendingIdleReason: nil
-            )
-        }
-
-        if latestCheckIn.kind == "project" || latestCheckIn.kind == "resume" {
-            let nextCheckInAt = latestCheckIn.timestamp.addingTimeInterval(pollingInterval)
-            let isPromptOverdue = eventDate >= nextCheckInAt
-            let accountableElapsedInterval = isPromptOverdue
-                ? max(eventDate.timeIntervalSince(latestCheckIn.timestamp), pollingInterval)
-                : pollingInterval
-
-            return DerivedRuntimeState(
+    private func makeCheckInTriggerContext() -> CheckInTriggerContext {
+        CheckInTriggerContext(
+            settings: CheckInTriggerSettings(settings),
+            latestCheckIn: latestCheckInRecord().flatMap(Self.checkInTriggerLatestCheckIn(from:)),
+            knownNextCheckInAt: schedulerStateRecord.nextCheckInAt ?? nextCheckInAt,
+            runtimeState: DerivedRuntimeState(
                 nextCheckInAt: nextCheckInAt,
                 isPromptOverdue: isPromptOverdue,
                 accountableElapsedInterval: accountableElapsedInterval,
-                isSilenced: false,
-                silenceEndsAt: nil,
-                isIdlePending: false,
-                pendingIdleStartedAt: nil,
-                pendingIdleEndedAt: nil,
-                pendingIdleReason: nil
-            )
+                isSilenced: isSilenced,
+                silenceEndsAt: silenceEndsAt,
+                isIdlePending: isIdlePending,
+                pendingIdleStartedAt: pendingIdleStartedAt,
+                pendingIdleEndedAt: pendingIdleEndedAt,
+                pendingIdleReason: pendingIdleReason
+            ),
+            promptPresentedAt: promptPresentedAt
+        )
+    }
+
+    private func activityDateForTriggerRecovery(
+        eventDate: Date,
+        explicitActivityDate: Date?
+    ) -> Date? {
+        if let explicitActivityDate {
+            return explicitActivityDate
         }
 
         guard
+            let latestCheckIn = latestCheckInRecord(),
             latestCheckIn.kind == "idle",
             let idleKindRawValue = latestCheckIn.idleKind,
-            let idleKind = TimeAllocationIdleKind(persistedValue: idleKindRawValue)
+            let idleKind = TimeAllocationIdleKind(persistedValue: idleKindRawValue),
+            idleKind != .doneForDay
         else {
-            return DerivedRuntimeState(
-                nextCheckInAt: eventDate.addingTimeInterval(pollingInterval),
-                isPromptOverdue: false,
-                accountableElapsedInterval: pollingInterval,
-                isSilenced: false,
-                silenceEndsAt: nil,
-                isIdlePending: false,
-                pendingIdleStartedAt: nil,
-                pendingIdleEndedAt: nil,
-                pendingIdleReason: nil
-            )
+            return nil
         }
 
-        if idleKind == .doneForDay {
-            let silenceEndsAt = nextDayCutoff(after: latestCheckIn.timestamp, dayCutoffHour: settings.analyticsDayCutoffHour)
-            if eventDate < silenceEndsAt {
-                return DerivedRuntimeState(
-                    nextCheckInAt: nil,
-                    isPromptOverdue: false,
-                    accountableElapsedInterval: 0,
-                    isSilenced: true,
-                    silenceEndsAt: silenceEndsAt,
-                    isIdlePending: false,
-                    pendingIdleStartedAt: nil,
-                    pendingIdleEndedAt: nil,
-                    pendingIdleReason: nil
-                )
+        return currentUserActivityDate(referenceDate: eventDate)
+    }
+
+    private static func checkInTriggerLatestCheckIn(
+        from record: CheckInRecord
+    ) -> CheckInTriggerLatestCheckIn? {
+        let kind: CheckInTriggerLatestCheckIn.Kind
+
+        switch record.kind {
+        case "project":
+            kind = .project
+        case "resume":
+            kind = .resume
+        case "idle":
+            guard
+                let idleKindRawValue = record.idleKind,
+                let idleKind = TimeAllocationIdleKind(persistedValue: idleKindRawValue)
+            else {
+                return nil
             }
-
-            let nextCheckInAt = silenceEndsAt.addingTimeInterval(pollingInterval)
-            let isPromptOverdue = eventDate >= nextCheckInAt
-            let accountableElapsedInterval = isPromptOverdue
-                ? max(eventDate.timeIntervalSince(silenceEndsAt), pollingInterval)
-                : pollingInterval
-
-            return DerivedRuntimeState(
-                nextCheckInAt: nextCheckInAt,
-                isPromptOverdue: isPromptOverdue,
-                accountableElapsedInterval: accountableElapsedInterval,
-                isSilenced: false,
-                silenceEndsAt: nil,
-                isIdlePending: false,
-                pendingIdleStartedAt: nil,
-                pendingIdleEndedAt: nil,
-                pendingIdleReason: nil
-            )
+            kind = .idle(idleKind)
+        default:
+            return nil
         }
 
-        let sampledActivityDate = activityDate ?? currentUserActivityDate(referenceDate: eventDate)
-        let resolvedActivityDate: Date
-        if
-            allowScreenLockReturnFallback,
-            latestCheckIn.source == "screen-locked",
-            sampledActivityDate <= latestCheckIn.timestamp
-        {
-            resolvedActivityDate = eventDate
-        } else {
-            resolvedActivityDate = sampledActivityDate
-        }
-        let pendingIdleEndedAt = resolvedActivityDate > latestCheckIn.timestamp ? resolvedActivityDate : nil
+        return CheckInTriggerLatestCheckIn(
+            timestamp: record.timestamp,
+            kind: kind,
+            source: record.source
+        )
+    }
 
-        return DerivedRuntimeState(
-            nextCheckInAt: nil,
-            isPromptOverdue: false,
-            accountableElapsedInterval: 0,
-            isSilenced: false,
-            silenceEndsAt: nil,
-            isIdlePending: true,
-            pendingIdleStartedAt: latestCheckIn.timestamp,
-            pendingIdleEndedAt: pendingIdleEndedAt,
-            pendingIdleReason: latestCheckIn.source
+    private func applyTriggerEffects(_ effects: [CheckInTriggerEffect]) {
+        guard !effects.isEmpty else {
+            return
+        }
+
+        for effect in effects {
+            switch effect {
+            case let .persistIdleCheckIn(timestamp, idleKind, source):
+                persistIdleCheckIn(at: timestamp, idleKind: idleKind, source: source)
+            }
+        }
+
+        try? modelContext.save()
+    }
+
+    private func tracePromptIdleThresholdReachedIfNeeded(
+        from decision: CheckInTriggerDecision
+    ) {
+        guard
+            decision.triggeredUnansweredPromptIdle,
+            let promptIdleMarkAt = decision.runtimeState.pendingIdleStartedAt
+        else {
+            return
+        }
+
+        trace(
+            "prompt-idle-threshold-reached",
+            metadata: ["promptIdleMarkAt": Self.traceTimestamp(promptIdleMarkAt)]
         )
     }
 
@@ -1384,11 +1364,21 @@ final class TempoAppModel {
         scheduledPromptTimer?.invalidate()
         scheduledPromptTimer = nil
         trace("runtime-timer-fired")
-        if handlePromptIdleThresholdReachedIfNeeded(referenceDate: clock.now) {
-            return
+        let decision = checkInTriggerEngine.decide(
+            signal: .timerElapsed(at: clock.now),
+            context: makeCheckInTriggerContext()
+        )
+        applyTriggerEffects(decision.effects)
+        apply(runtimeState: decision.runtimeState)
+        tracePromptIdleThresholdReachedIfNeeded(from: decision)
+        if decision.triggeredUnansweredPromptIdle {
+            promptSearchText = ""
+            refreshAnalytics(referenceDate: clock.now)
         }
-        recoverSchedulerState(eventDate: clock.now)
-        presentCheckInPromptIfNeeded()
+        refreshCheckInPromptState()
+        if decision.shouldPresentPrompt {
+            presentCheckInPromptIfNeeded()
+        }
     }
 
     func nextRuntimeUpdateAt(referenceDate: Date) -> Date? {
@@ -1458,36 +1448,6 @@ final class TempoAppModel {
         }
 
         checkInNow()
-    }
-
-    @discardableResult
-    private func handlePromptIdleThresholdReachedIfNeeded(referenceDate: Date) -> Bool {
-        guard let promptIdleMarkAt, referenceDate >= promptIdleMarkAt else {
-            return false
-        }
-
-        guard latestCheckInRecord()?.kind != "idle" else {
-            refreshRuntimeState(eventDate: referenceDate)
-            return false
-        }
-
-        persistIdleCheckIn(
-            at: promptIdleMarkAt,
-            idleKind: .unansweredPrompt,
-            source: "unanswered-prompt"
-        )
-        try? modelContext.save()
-        trace(
-            "prompt-idle-threshold-reached",
-            metadata: ["promptIdleMarkAt": Self.traceTimestamp(promptIdleMarkAt)]
-        )
-
-        refreshRuntimeState(eventDate: referenceDate)
-        promptSearchText = ""
-        refreshCheckInPromptState()
-        presentCheckInPromptIfNeeded()
-        refreshAnalytics(referenceDate: referenceDate)
-        return true
     }
 
     private func currentUserActivityDate(referenceDate: Date) -> Date {
