@@ -639,9 +639,7 @@ final class TempoAppModel {
         }
 
         if isIdlePending {
-            promptProjectSelection = .project(project.id)
-            promptSearchText = ""
-            refreshCheckInPromptState()
+            try assignPendingIdle(to: project)
             return
         }
 

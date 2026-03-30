@@ -165,7 +165,7 @@ final class TempoAppBootstrapTests: XCTestCase {
     }
 
     @MainActor
-    func testSubmitPromptSearchCreatesProjectWhenQueryIsNew() throws {
+    func testSubmitPromptSearchCreatesProjectAndResolvesIdleWhenQueryIsNew() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = TempoAppModel(
             modelContainer: TempoModelContainer.inMemory(),
@@ -187,7 +187,9 @@ final class TempoAppBootstrapTests: XCTestCase {
         try model.submitPromptSearch()
 
         XCTAssertFalse(model.canCreatePromptProject(named: "test"))
-        XCTAssertEqual(model.selectedPromptProject?.name, "test")
+        XCTAssertFalse(model.isIdlePending)
+        XCTAssertFalse(model.checkInPromptState.isPresented)
+        XCTAssertEqual(model.nextCheckInAt, now.addingTimeInterval(25 * 60))
     }
 
     @MainActor

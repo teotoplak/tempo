@@ -138,6 +138,46 @@ final class CheckInCompletionTests: XCTestCase {
     }
 
     @MainActor
+    func testSubmittingNewProjectDuringScreenLockIdleReturnResolvesIdleOnFirstSubmit() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let idleStart = now.addingTimeInterval(-(15 * 60))
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now)
+        )
+        appModel.modelContext.insert(
+            CheckInRecord(
+                timestamp: idleStart,
+                kind: "idle",
+                source: "screen-locked",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try appModel.modelContext.save()
+        appModel.recoverSchedulerState(eventDate: now, activityDate: now)
+        appModel.updatePromptSearchText("linkedin")
+
+        try appModel.submitPromptSearch()
+
+        let projects = try appModel.modelContext.fetch(
+            FetchDescriptor<ProjectRecord>(sortBy: [SortDescriptor(\.sortOrder)])
+        )
+        let checkIns = try appModel.modelContext.fetch(
+            FetchDescriptor<CheckInRecord>(sortBy: [SortDescriptor(\.timestamp)])
+        )
+
+        XCTAssertEqual(projects.map(\.name), ["linkedin"])
+        XCTAssertEqual(checkIns.count, 2)
+        XCTAssertEqual(checkIns.first?.kind, "idle")
+        XCTAssertEqual(checkIns.first?.source, "screen-locked")
+        XCTAssertEqual(checkIns.last?.project?.name, "linkedin")
+        XCTAssertEqual(checkIns.last?.source, "idle-return")
+        XCTAssertFalse(appModel.isIdlePending)
+        XCTAssertFalse(appModel.checkInPromptState.isPresented)
+        XCTAssertEqual(appModel.nextCheckInAt, now.addingTimeInterval(25 * 60))
+    }
+
+    @MainActor
     func testSelectingProjectAfterIdleReturnStoresOnlyTheReturningProjectCheckIn() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let appModel = TempoAppModel(
