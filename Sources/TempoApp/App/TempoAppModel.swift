@@ -1288,13 +1288,6 @@ final class TempoAppModel {
         latestCheckInRecord()?.timestamp
     }
 
-    private func nextDayCutoff(after date: Date, dayCutoffHour: Int) -> Date {
-        let shiftedDate = calendar.date(byAdding: .hour, value: -dayCutoffHour, to: date) ?? date
-        let shiftedStartOfDay = calendar.startOfDay(for: shiftedDate)
-        let nextShiftedDay = calendar.date(byAdding: .day, value: 1, to: shiftedStartOfDay) ?? shiftedStartOfDay
-        return calendar.date(byAdding: .hour, value: dayCutoffHour, to: nextShiftedDay) ?? nextShiftedDay
-    }
-
     private var shouldPresentPendingIdlePrompt: Bool {
         isIdlePending && pendingIdleEndedAt != nil
     }

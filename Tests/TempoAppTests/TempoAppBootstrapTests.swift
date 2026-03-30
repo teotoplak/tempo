@@ -572,7 +572,6 @@ final class TempoAppBootstrapTests: XCTestCase {
                 project: project
             )
         )
-        model.schedulerStateRecord.lastCheckInAt = now.addingTimeInterval(-(40 * 60))
         model.schedulerStateRecord.pendingIdleStartedAt = now.addingTimeInterval(-(20 * 60))
         model.schedulerStateRecord.pendingIdleEndedAt = now.addingTimeInterval(-(15 * 60))
         model.schedulerStateRecord.pendingIdleReason = "screen-locked"
