@@ -1377,11 +1377,22 @@ final class TempoAppModel {
             return nil
         }
 
+        let candidates = [nextCheckInAt, silenceEndsAt].compactMap { $0 }
+        if
+            !isPromptOverdue,
+            let earliestCandidate = candidates.min(),
+            earliestCandidate <= referenceDate
+        {
+            // If a timer fires a few milliseconds early and the runtime state has not yet
+            // transitioned to overdue, queue an immediate retry instead of dropping the
+            // scheduler on the floor until some unrelated recovery event occurs.
+            return earliestCandidate
+        }
+
         if let promptIdleMarkAt, isPromptOverdue {
             return promptIdleMarkAt
         }
 
-        let candidates = [nextCheckInAt, silenceEndsAt].compactMap { $0 }
         return candidates.filter { $0 > referenceDate }.min()
     }
 

@@ -167,6 +167,27 @@ final class CheckInPromptPresentationTests: XCTestCase {
     }
 
     @MainActor
+    func testNextRuntimeUpdateRetriesImmediatelyWhenCheckInDeadlineJustPassed() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let justMissedDeadline = now.addingTimeInterval(-0.004)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedPresentationClock(now: now),
+            calendar: fixedPresentationCalendar(),
+            launchAtLoginController: FixedPresentationLaunchAtLoginController(isEnabled: false)
+        )
+
+        appModel.nextCheckInAt = justMissedDeadline
+        appModel.isPromptOverdue = false
+        appModel.accountableElapsedInterval = 25 * 60
+
+        XCTAssertEqual(
+            appModel.nextRuntimeUpdateAt(referenceDate: now),
+            justMissedDeadline
+        )
+    }
+
+    @MainActor
     func testAttachedPromptControllerDoesNotHidePromptWhenMenuBarWindowIsVisible() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let appModel = TempoAppModel(
