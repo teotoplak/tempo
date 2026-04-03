@@ -40,6 +40,26 @@ struct TempoApp: App {
             appModel.handleSceneActivation()
             appModel.presentCheckInPromptIfNeeded()
         }
+
+        Window("Time Statistics", id: AppSceneID.analyticsWindow.rawValue) {
+            AnalyticsView(appModel: appModel)
+                .modelContainer(appModel.modelContainer)
+                .frame(minWidth: 1040, minHeight: 760)
+                .task {
+                    bootstrapAppIfNeeded()
+                    appModel.prepareWeeklyAnalyticsPresentation(resetReferenceDate: false)
+                }
+        }
+        .defaultSize(width: 1180, height: 820)
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else {
+                return
+            }
+
+            bootstrapAppIfNeeded()
+            appModel.handleSceneActivation()
+            appModel.presentCheckInPromptIfNeeded()
+        }
     }
 
     @MainActor

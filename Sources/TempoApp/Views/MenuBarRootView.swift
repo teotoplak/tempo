@@ -5,6 +5,7 @@ struct MenuBarRootView: View {
     @State private var isShowingSettings = false
     @State private var isShowingTroubleshootingCheckIns = false
     @Environment(\.calendar) private var calendar
+    @Environment(\.openWindow) private var openWindow
 
     private let actionColumns = [
         GridItem(.flexible(), spacing: 10),
@@ -66,6 +67,24 @@ struct MenuBarRootView: View {
                 }
 
                 LazyVGrid(columns: actionColumns, spacing: 10) {
+                    secondaryActionButton(title: "Analytics", icon: "chart.xyaxis.line") {
+                        appModel.recordAnalyticsWindowEvent(
+                            "menu-bar-button-clicked",
+                            metadata: ["source": "menu-bar"]
+                        )
+                        appModel.prepareWeeklyAnalyticsPresentation()
+                        presentDetachedPrompt {
+                            NSApplication.shared.activate(ignoringOtherApps: true)
+                            openWindow(id: AppSceneID.analyticsWindow.rawValue)
+                            DispatchQueue.main.async {
+                                appModel.bringAnalyticsWindowToFront(reason: "menu-bar-open-request-immediate")
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                appModel.bringAnalyticsWindowToFront(reason: "menu-bar-open-request-deferred")
+                            }
+                        }
+                    }
+
                     secondaryActionButton(title: "Settings", icon: "slider.horizontal.3") {
                         isShowingSettings = true
                     }

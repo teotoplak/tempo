@@ -95,6 +95,40 @@ final class AnalyticsAggregationTests: XCTestCase {
     }
 
     @MainActor
+    func testAnalyticsWeekNavigationMovesAcrossWeeksAndStopsAtCurrentWeek() throws {
+        let now = date(2026, 3, 25, 12, 0, 0)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedAnalyticsClock(now: now),
+            calendar: testCalendar
+        )
+        let project = ProjectRecord(name: "Deep Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 17, 9, 0, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 17, 11, 0, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 24, 9, 0, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 24, 10, 0, 0)))
+        try appModel.modelContext.save()
+
+        appModel.prepareWeeklyAnalyticsPresentation()
+
+        XCTAssertEqual(appModel.analyticsPeriod.startDate, date(2026, 3, 23, 6, 0, 0))
+        XCTAssertFalse(appModel.canShowNextAnalyticsPeriod)
+
+        appModel.showPreviousAnalyticsPeriod()
+
+        XCTAssertEqual(appModel.analyticsPeriod.startDate, date(2026, 3, 16, 6, 0, 0))
+        XCTAssertEqual(appModel.analyticsTotalDuration, 2 * 60 * 60, accuracy: 0.001)
+        XCTAssertTrue(appModel.canShowNextAnalyticsPeriod)
+
+        appModel.showNextAnalyticsPeriod()
+
+        XCTAssertEqual(appModel.analyticsPeriod.startDate, date(2026, 3, 23, 6, 0, 0))
+        XCTAssertEqual(appModel.analyticsTotalDuration, 60 * 60, accuracy: 0.001)
+        XCTAssertFalse(appModel.canShowNextAnalyticsPeriod)
+    }
+
+    @MainActor
     func testAppModelUsesConfiguredCutoffForTodaySummary() throws {
         let now = date(2026, 3, 17, 7, 0, 0)
         let appModel = TempoAppModel(

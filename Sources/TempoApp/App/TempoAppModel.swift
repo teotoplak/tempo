@@ -101,6 +101,8 @@ final class TempoAppModel {
     var analyticsProjectSummaries: [AnalyticsProjectSummary] = []
     var analyticsFirstEntryStartDate: Date?
     var analyticsTimelineIntervals: [AnalyticsTimelineInterval] = []
+    var analyticsAllocatedIntervals: [TimeAllocationInterval] = []
+    var canShowNextAnalyticsPeriod = false
     var menuBarDayPeriod: AnalyticsPeriod
     var menuBarDayWorkedDuration: TimeInterval = 0
     var menuBarDayProjectSummaries: [AnalyticsProjectSummary] = []
@@ -123,9 +125,12 @@ final class TempoAppModel {
     private let diagnosticsRecorder: TempoDiagnosticsRecorder
     private let launchAtLoginController: any LaunchAtLoginControlling
     private var hasHandledInitialLaunch = false
+    private var analyticsReferenceDate: Date
     private var menuBarDayReferenceDate: Date
     private var workspaceObservers: [NSObjectProtocol] = []
     private var checkInPromptWindowController: CheckInPromptWindowController?
+    private weak var analyticsWindow: NSWindow?
+    private var priorAnalyticsActivationPolicy: NSApplication.ActivationPolicy?
     private var scheduledPromptTimer: Timer?
     private var hasQueuedImmediatePromptTimerFire = false
 
@@ -154,6 +159,7 @@ final class TempoAppModel {
             endDate: clock.now,
             label: clock.now.formatted(date: .abbreviated, time: .omitted)
         )
+        self.analyticsReferenceDate = clock.now
         self.menuBarDayReferenceDate = clock.now
 
         let settingsFetch = FetchDescriptor<AppSettingsRecord>()
@@ -185,7 +191,7 @@ final class TempoAppModel {
         self.lastSavedPollingIntervalMinutes = self.settings.pollingIntervalMinutes
 
         refreshRuntimeState(eventDate: clock.now)
-        refreshAnalytics(referenceDate: clock.now)
+        reloadAnalytics()
         refreshCheckInPromptState()
         trace("model-initialized", metadata: ["diagnosticsLogPath": diagnosticsLogPath])
     }
@@ -200,7 +206,7 @@ final class TempoAppModel {
         observeWorkspaceWake()
         reconcileLaunchAtLoginPreferenceWithSystem()
         recoverSchedulerState(eventDate: clock.now, allowScreenLockReturnFallback: true)
-        refreshAnalytics(referenceDate: clock.now)
+        reloadAnalytics()
         presentLaunchCheckInPrompt()
     }
 
@@ -310,7 +316,7 @@ final class TempoAppModel {
             // screen-lock recovery.
             recoverSchedulerState(eventDate: now, activityDate: now)
             menuBarDayReferenceDate = now
-            refreshAnalytics(referenceDate: now)
+            reloadAnalytics()
         }
 
         checkInPromptWindowController?.update(with: checkInPromptState)
@@ -592,7 +598,35 @@ final class TempoAppModel {
 
     func selectAnalyticsRange(_ range: AnalyticsRange) {
         selectedAnalyticsRange = range
-        refreshAnalytics(referenceDate: clock.now)
+        reloadAnalytics()
+    }
+
+    func prepareWeeklyAnalyticsPresentation(resetReferenceDate: Bool = true) {
+        recordAnalyticsWindowEvent(
+            "prepare-weekly-presentation",
+            metadata: ["resetReferenceDate": "\(resetReferenceDate)"]
+        )
+        selectedAnalyticsRange = .week
+        if resetReferenceDate {
+            refreshAnalytics(referenceDate: clock.now)
+        } else {
+            reloadAnalytics()
+        }
+    }
+
+    func showPreviousAnalyticsPeriod() {
+        recordAnalyticsWindowEvent("navigate-previous-period")
+        refreshAnalytics(referenceDate: analyticsPeriod.startDate.addingTimeInterval(-1))
+    }
+
+    func showNextAnalyticsPeriod() {
+        guard canShowNextAnalyticsPeriod else {
+            recordAnalyticsWindowEvent("navigate-next-period-blocked")
+            return
+        }
+
+        recordAnalyticsWindowEvent("navigate-next-period")
+        refreshAnalytics(referenceDate: analyticsPeriod.endDate)
     }
 
     func showPreviousMenuBarDay() {
@@ -693,7 +727,7 @@ final class TempoAppModel {
         persistProjectCheckIn(project, at: completionDate, source: "idle-return")
         try modelContext.save()
         refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
-        refreshAnalytics(referenceDate: completionDate)
+        reloadAnalytics()
         promptSearchText = ""
         refreshCheckInPromptState()
         dismissCheckInPrompt()
@@ -707,7 +741,7 @@ final class TempoAppModel {
         persistResumeCheckIn(at: clock.now, source: "idle-discarded")
         try modelContext.save()
         refreshRuntimeState(eventDate: clock.now, activityDate: clock.now)
-        refreshAnalytics(referenceDate: clock.now)
+        reloadAnalytics()
     }
 
     func handleScreenLock() {
@@ -737,7 +771,7 @@ final class TempoAppModel {
     func renameProject(_ project: ProjectRecord, to newName: String) throws {
         project.name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         try modelContext.save()
-        refreshAnalytics(referenceDate: clock.now)
+        reloadAnalytics()
     }
 
     func deleteProject(_ project: ProjectRecord) throws {
@@ -766,10 +800,16 @@ final class TempoAppModel {
             rescheduleNextCheckInFromSettingsChange(at: clock.now)
         }
 
+        reloadAnalytics()
         refreshCheckInPromptState()
     }
 
+    func reloadAnalytics() {
+        refreshAnalytics(referenceDate: analyticsReferenceDate)
+    }
+
     func refreshAnalytics(referenceDate: Date) {
+        analyticsReferenceDate = referenceDate
         let snapshot = analyticsStore.summary(
             range: selectedAnalyticsRange,
             referenceDate: referenceDate,
@@ -781,12 +821,30 @@ final class TempoAppModel {
         analyticsProjectSummaries = snapshot.projectSummaries
         analyticsFirstEntryStartDate = snapshot.firstEntryStartDate
         analyticsTimelineIntervals = snapshot.timelineIntervals
+        analyticsAllocatedIntervals = snapshot.allocatedIntervals
+        let currentPeriod = analyticsStore.period(
+            for: selectedAnalyticsRange,
+            referenceDate: clock.now,
+            calendar: calendar,
+            dayCutoffHour: settings.analyticsDayCutoffHour
+        )
+        canShowNextAnalyticsPeriod = snapshot.period.startDate < currentPeriod.startDate
+        recordAnalyticsWindowEvent(
+            "snapshot-refreshed",
+            metadata: [
+                "referenceDate": Self.traceTimestamp(referenceDate),
+                "projectSummaryCount": "\(snapshot.projectSummaries.count)",
+                "allocatedIntervalCount": "\(snapshot.allocatedIntervals.count)",
+                "totalTrackedSeconds": Self.traceInterval(snapshot.totalDuration)
+            ]
+        )
         refreshMenuBarDayAnalytics()
     }
 
     func exportAnalyticsCSV() {
         analyticsExportStatusMessage = nil
         analyticsExportErrorMessage = nil
+        recordAnalyticsWindowEvent("export-csv-clicked")
 
         let savePanel = NSSavePanel()
         savePanel.nameFieldStringValue = "tempo-analytics.csv"
@@ -801,13 +859,21 @@ final class TempoAppModel {
         do {
             let csv = csvExportService.csvString(
                 range: selectedAnalyticsRange,
-                referenceDate: clock.now,
+                referenceDate: analyticsReferenceDate,
                 dayCutoffHour: settings.analyticsDayCutoffHour
             )
             try csv.write(to: destinationURL, atomically: true, encoding: .utf8)
             analyticsExportStatusMessage = "CSV exported"
+            recordAnalyticsWindowEvent(
+                "export-csv-succeeded",
+                metadata: ["destinationPath": destinationURL.path]
+            )
         } catch {
             analyticsExportErrorMessage = error.localizedDescription
+            recordAnalyticsWindowEvent(
+                "export-csv-failed",
+                metadata: ["error": error.localizedDescription]
+            )
         }
     }
 
@@ -1364,7 +1430,7 @@ final class TempoAppModel {
         tracePromptIdleThresholdReachedIfNeeded(from: decision)
         if decision.triggeredUnansweredPromptIdle {
             promptSearchText = ""
-            refreshAnalytics(referenceDate: clock.now)
+            reloadAnalytics()
         }
         refreshCheckInPromptState()
         if decision.shouldPresentPrompt {
@@ -1485,7 +1551,7 @@ final class TempoAppModel {
         try modelContext.save()
 
         refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
-        refreshAnalytics(referenceDate: completionDate)
+        reloadAnalytics()
         promptSearchText = ""
         refreshCheckInPromptState()
         dismissCheckInPrompt()
@@ -1493,6 +1559,91 @@ final class TempoAppModel {
 
     func recordPromptWindowEvent(_ event: String, metadata: [String: String] = [:]) {
         diagnosticsRecorder.record(component: "CheckInPromptWindowController", event: event, metadata: metadata)
+    }
+
+    func recordAnalyticsWindowEvent(_ event: String, metadata: [String: String] = [:]) {
+        diagnosticsRecorder.record(
+            component: "AnalyticsWindow",
+            event: event,
+            metadata: metadata.merging(analyticsTraceMetadata()) { _, new in new }
+        )
+    }
+
+    func registerAnalyticsWindow(_ window: NSWindow) {
+        analyticsWindow = window
+        window.identifier = NSUserInterfaceItemIdentifier(AppSceneID.analyticsWindow.rawValue)
+        recordAnalyticsWindowEvent(
+            "window-registered",
+            metadata: [
+                "windowNumber": "\(window.windowNumber)",
+                "title": window.title,
+                "isVisible": "\(window.isVisible)"
+            ]
+        )
+    }
+
+    func bringAnalyticsWindowToFront(reason: String) {
+        guard let analyticsWindow else {
+            recordAnalyticsWindowEvent(
+                "window-front-request-missed",
+                metadata: ["reason": reason]
+            )
+            return
+        }
+
+        promoteAppForAnalyticsWindowIfNeeded()
+        if analyticsWindow.isMiniaturized {
+            analyticsWindow.deminiaturize(nil)
+        }
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        analyticsWindow.orderFrontRegardless()
+        analyticsWindow.makeKeyAndOrderFront(nil)
+        analyticsWindow.level = .normal
+
+        recordAnalyticsWindowEvent(
+            "window-brought-to-front",
+            metadata: [
+                "reason": reason,
+                "windowNumber": "\(analyticsWindow.windowNumber)",
+                "isVisible": "\(analyticsWindow.isVisible)",
+                "isKeyWindow": "\(analyticsWindow.isKeyWindow)",
+                "isMainWindow": "\(analyticsWindow.isMainWindow)",
+                "activationPolicy": NSApplication.shared.activationPolicy().rawValue.description
+            ]
+        )
+    }
+
+    func analyticsWindowDidDisappear() {
+        recordAnalyticsWindowEvent("window-disappeared")
+        restoreAnalyticsActivationPolicyIfNeeded()
+    }
+
+    private func promoteAppForAnalyticsWindowIfNeeded() {
+        let app = NSApplication.shared
+        if priorAnalyticsActivationPolicy == nil {
+            priorAnalyticsActivationPolicy = app.activationPolicy()
+        }
+
+        if app.activationPolicy() != .regular {
+            app.setActivationPolicy(.regular)
+            recordAnalyticsWindowEvent(
+                "activation-policy-promoted",
+                metadata: ["previousPolicy": priorAnalyticsActivationPolicy?.rawValue.description ?? "nil"]
+            )
+        }
+    }
+
+    private func restoreAnalyticsActivationPolicyIfNeeded() {
+        guard let priorAnalyticsActivationPolicy else {
+            return
+        }
+
+        NSApplication.shared.setActivationPolicy(priorAnalyticsActivationPolicy)
+        recordAnalyticsWindowEvent(
+            "activation-policy-restored",
+            metadata: ["restoredPolicy": priorAnalyticsActivationPolicy.rawValue.description]
+        )
+        self.priorAnalyticsActivationPolicy = nil
     }
 
     private func trace(_ event: String, metadata: [String: String] = [:]) {
@@ -1516,6 +1667,20 @@ final class TempoAppModel {
             "pendingIdleEndedAt": Self.traceTimestamp(pendingIdleEndedAt),
             "pendingIdleReason": pendingIdleReason ?? "nil",
             "promptPresented": "\(checkInPromptState.isPresented)"
+        ]
+    }
+
+    private func analyticsTraceMetadata() -> [String: String] {
+        [
+            "selectedAnalyticsRange": selectedAnalyticsRange.rawValue,
+            "analyticsReferenceDate": Self.traceTimestamp(analyticsReferenceDate),
+            "analyticsPeriodStart": Self.traceTimestamp(analyticsPeriod.startDate),
+            "analyticsPeriodEnd": Self.traceTimestamp(analyticsPeriod.endDate),
+            "analyticsPeriodLabel": analyticsPeriod.label,
+            "analyticsProjectSummaryCount": "\(analyticsProjectSummaries.count)",
+            "analyticsAllocatedIntervalCount": "\(analyticsAllocatedIntervals.count)",
+            "analyticsTotalDurationSeconds": Self.traceInterval(analyticsTotalDuration),
+            "canShowNextAnalyticsPeriod": "\(canShowNextAnalyticsPeriod)"
         ]
     }
 

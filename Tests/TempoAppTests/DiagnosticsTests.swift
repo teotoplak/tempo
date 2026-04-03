@@ -114,6 +114,34 @@ final class DiagnosticsTests: XCTestCase {
         let contents = try String(contentsOf: logFileURL, encoding: .utf8)
         XCTAssertTrue(contents.contains("\"usedScreenLockReturnFallback\":\"true\""))
     }
+
+    @MainActor
+    func testAnalyticsNavigationWritesDiagnosticsTrace() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let diagnosticsDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let recorder = TempoDiagnosticsRecorder(baseDirectoryURL: diagnosticsDirectory)
+        let model = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedDiagnosticsClock(now: now),
+            diagnosticsRecorder: recorder,
+            launchAtLoginController: FixedDiagnosticsLaunchAtLoginController(isEnabled: false)
+        )
+
+        model.recordAnalyticsWindowEvent("menu-bar-button-clicked", metadata: ["source": "test"])
+        model.prepareWeeklyAnalyticsPresentation()
+        model.showPreviousAnalyticsPeriod()
+        model.recordAnalyticsWindowEvent("window-appeared")
+
+        let logFileURL = try XCTUnwrap(recorder.logFileURL)
+        let contents = try String(contentsOf: logFileURL, encoding: .utf8)
+
+        XCTAssertTrue(contents.contains("\"component\":\"AnalyticsWindow\""))
+        XCTAssertTrue(contents.contains("\"event\":\"menu-bar-button-clicked\""))
+        XCTAssertTrue(contents.contains("\"event\":\"prepare-weekly-presentation\""))
+        XCTAssertTrue(contents.contains("\"event\":\"navigate-previous-period\""))
+        XCTAssertTrue(contents.contains("\"event\":\"window-appeared\""))
+        XCTAssertTrue(contents.contains("\"event\":\"snapshot-refreshed\""))
+    }
 }
 
 private struct FixedDiagnosticsClock: SchedulerClock {

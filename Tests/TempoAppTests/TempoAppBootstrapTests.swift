@@ -312,9 +312,10 @@ final class TempoAppBootstrapTests: XCTestCase {
 
         XCTAssertTrue(menuSource.contains("Check In Now"))
         XCTAssertTrue(menuSource.contains("Done for day"))
+        XCTAssertTrue(menuSource.contains("Analytics"))
         XCTAssertTrue(menuSource.contains("Settings"))
         XCTAssertTrue(menuSource.contains("Quit Tempo"))
-        XCTAssertFalse(menuSource.contains("secondaryActionButton(title: \"Analytics\""))
+        XCTAssertTrue(menuSource.contains("openWindow(id: AppSceneID.analyticsWindow.rawValue)"))
         XCTAssertFalse(menuSource.contains("secondaryActionButton(title: \"Projects\""))
         XCTAssertTrue(menuSource.contains("appModel.setMenuBarWindowVisible(true)"))
         XCTAssertFalse(menuSource.contains("inlinePromptContent"))
