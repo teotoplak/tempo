@@ -25,8 +25,8 @@ struct AnalyticsView: View {
                 header
                 weekNavigator
                 summaryCards
-                weeklyVisualsSection
                 allocationSection
+                weeklyVisualsSection
             }
             .padding(28)
         }
@@ -295,67 +295,88 @@ struct AnalyticsView: View {
                     systemImage: "clock.badge.questionmark",
                     description: Text("Change weeks or log time to populate the report.")
                 )
-                .frame(maxWidth: .infinity, minHeight: 220)
+                .frame(maxWidth: .infinity, minHeight: 160)
             } else {
-                VStack(spacing: 12) {
-                    ForEach(workedProjectSummaries, id: \.id) { summary in
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                HStack(spacing: 10) {
-                                    Circle()
-                                        .fill(color(for: summary.projectID, name: summary.projectName))
-                                        .frame(width: 10, height: 10)
+                compactAllocationTable
+            }
+        }
+        .padding(18)
+        .background(cardBackground)
+    }
 
-                                    Text(summary.projectName)
-                                        .font(.headline)
-                                }
+    private var compactAllocationTable: some View {
+        VStack(spacing: 0) {
+            allocationTableHeader
 
-                                Spacer()
+            ForEach(Array(workedProjectSummaries.enumerated()), id: \.element.id) { index, summary in
+                allocationTableRow(summary)
 
-                                VStack(alignment: .trailing, spacing: 4) {
-                                    Text(TempoAppModel.formattedTrackedDuration(summary.totalDuration))
-                                        .font(.headline.monospacedDigit())
-                                    Text(summary.percentageOfTotal.formatted(percentStyle))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-
-                            GeometryReader { geometry in
-                                let progress = min(max(summary.percentageOfTotal, 0), 1)
-
-                                ZStack(alignment: .leading) {
-                                    Capsule(style: .continuous)
-                                        .fill(Color.black.opacity(0.08))
-
-                                    Capsule(style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [
-                                                    color(for: summary.projectID, name: summary.projectName).opacity(0.85),
-                                                    color(for: summary.projectID, name: summary.projectName)
-                                                ],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
-                                            )
-                                        )
-                                        .frame(width: max(geometry.size.width * progress, progress > 0 ? 10 : 0))
-                                }
-                            }
-                            .frame(height: 8)
-                        }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(Color.white.opacity(0.78))
-                        )
-                    }
+                if index != workedProjectSummaries.indices.last {
+                    Divider()
+                        .overlay(Color.black.opacity(0.06))
                 }
             }
         }
-        .padding(22)
-        .background(cardBackground)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.82))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.05))
+        }
+    }
+
+    private var allocationTableHeader: some View {
+        HStack(spacing: 12) {
+            Text("Project")
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("Time")
+                .frame(width: 72, alignment: .trailing)
+
+            Text("Share")
+                .frame(width: 56, alignment: .trailing)
+
+            Text("Intervals")
+                .frame(width: 64, alignment: .trailing)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.black.opacity(0.025))
+    }
+
+    private func allocationTableRow(_ summary: AnalyticsProjectSummary) -> some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(color(for: summary.projectID, name: summary.projectName))
+                    .frame(width: 8, height: 8)
+
+                Text(summary.projectName)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(TempoAppModel.formattedTrackedDuration(summary.totalDuration))
+                .font(.subheadline.monospacedDigit())
+                .frame(width: 72, alignment: .trailing)
+
+            Text(summary.percentageOfTotal.formatted(percentStyle))
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 56, alignment: .trailing)
+
+            Text("\(summary.entryCount)")
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 64, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private var workedProjectSummaries: [AnalyticsProjectSummary] {
