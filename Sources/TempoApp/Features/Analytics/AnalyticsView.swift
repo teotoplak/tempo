@@ -6,6 +6,9 @@ struct AnalyticsView: View {
     @Bindable var appModel: TempoAppModel
     @Environment(\.calendar) private var calendar
     @State private var resolvedWindowNumber: Int?
+    @State private var hoveredDailyBarSegmentID: String?
+    @State private var hoveredDailyBarDayID: Date?
+    @State private var hoveredPieProjectID: String?
 
     private let percentStyle = FloatingPointFormatStyle<Double>.Percent.percent.precision(.fractionLength(0))
     private let projectPalette: [Color] = [
@@ -175,6 +178,11 @@ struct AnalyticsView: View {
                 subtitle: "Stacked hours per project for each day in the week"
             )
 
+            hoverSummaryBanner(
+                info: dailyBreakdownHoverInfo,
+                placeholder: "Hover a stacked bar segment to inspect project hours."
+            )
+
             if workedProjectSummaries.isEmpty {
                 ContentUnavailableView(
                     "No project time this week",
@@ -202,6 +210,9 @@ struct AnalyticsView: View {
         }
         .chartYAxis { dailyBreakdownYAxis }
         .chartXAxis { dailyBreakdownXAxis }
+        .chartOverlay { proxy in
+            dailyBreakdownHoverOverlay(proxy: proxy)
+        }
         .chartYScale(domain: 0...maxWorkedDayHours)
         .chartPlotStyle { plot in
             plot
@@ -215,6 +226,11 @@ struct AnalyticsView: View {
             cardHeader(
                 title: "Weekly share",
                 subtitle: "Project mix for the full week"
+            )
+
+            hoverSummaryBanner(
+                info: weeklyShareHoverInfo,
+                placeholder: "Hover a pie slice to inspect weekly project hours."
             )
 
             if workedProjectSummaries.isEmpty {
@@ -261,8 +277,12 @@ struct AnalyticsView: View {
                 angularInset: 2
             )
             .foregroundStyle(color(for: summary.projectID, name: summary.projectName))
+            .opacity(hoveredPieProjectID == nil || hoveredPieProjectID == summary.id ? 1 : 0.32)
         }
         .chartLegend(.hidden)
+        .chartOverlay { proxy in
+            weeklyShareHoverOverlay(proxy: proxy)
+        }
         .chartBackground { proxy in
             GeometryReader { geometry in
                 if let frame = proxy.plotFrame {
@@ -325,6 +345,40 @@ struct AnalyticsView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Color.black.opacity(0.05))
         }
+    }
+
+    private func hoverSummaryBanner(info: AnalyticsHoverInfo?, placeholder: String) -> some View {
+        HStack(spacing: 10) {
+            if let info {
+                Circle()
+                    .fill(info.color)
+                    .frame(width: 9, height: 9)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(info.title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(info.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Image(systemName: "cursorarrow.motionlines")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Text(placeholder)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.7))
+        )
     }
 
     private var allocationTableHeader: some View {
@@ -412,6 +466,58 @@ struct AnalyticsView: View {
 
     private var activeDayCount: Int {
         weekDaySummaries.filter { $0.workedDuration > 0 }.count
+    }
+
+    private var hoveredDailyBarSegment: AnalyticsWeekProjectDuration? {
+        guard
+            let hoveredDailyBarSegmentID,
+            let hoveredDailyBarDayID,
+            let day = weekDaySummaries.first(where: { $0.id == hoveredDailyBarDayID })
+        else {
+            return nil
+        }
+
+        return day.projectSegments.first(where: { $0.id == hoveredDailyBarSegmentID })
+    }
+
+    private var hoveredDailyBarDay: AnalyticsWeekDaySummary? {
+        guard let hoveredDailyBarDayID else {
+            return nil
+        }
+
+        return weekDaySummaries.first(where: { $0.id == hoveredDailyBarDayID })
+    }
+
+    private var hoveredPieSummary: AnalyticsProjectSummary? {
+        guard let hoveredPieProjectID else {
+            return nil
+        }
+
+        return workedProjectSummaries.first(where: { $0.id == hoveredPieProjectID })
+    }
+
+    private var dailyBreakdownHoverInfo: AnalyticsHoverInfo? {
+        guard let segment = hoveredDailyBarSegment, let day = hoveredDailyBarDay else {
+            return nil
+        }
+
+        return AnalyticsHoverInfo(
+            title: segment.projectName,
+            subtitle: "\(day.weekdayLabel) \(day.dateLabel) · \(TempoAppModel.formattedTrackedDuration(segment.duration))",
+            color: color(for: segment.projectID, name: segment.projectName)
+        )
+    }
+
+    private var weeklyShareHoverInfo: AnalyticsHoverInfo? {
+        guard let summary = hoveredPieSummary else {
+            return nil
+        }
+
+        return AnalyticsHoverInfo(
+            title: summary.projectName,
+            subtitle: "\(TempoAppModel.formattedTrackedDuration(summary.totalDuration)) · \(summary.percentageOfTotal.formatted(percentStyle)) of week",
+            color: color(for: summary.projectID, name: summary.projectName)
+        )
     }
 
     private var topProjectCardText: String {
@@ -528,7 +634,131 @@ struct AnalyticsView: View {
             stacking: .standard
         )
         .foregroundStyle(color(for: segment.projectID, name: segment.projectName))
+        .opacity(hoveredDailyBarSegmentID == nil || hoveredDailyBarSegmentID == segment.id ? 1 : 0.35)
         .cornerRadius(8)
+    }
+
+    private func dailyBreakdownHoverOverlay(proxy: ChartProxy) -> some View {
+        GeometryReader { geometry in
+            Color.clear
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    guard let plotFrame = proxy.plotFrame else {
+                        clearDailyBreakdownHover()
+                        return
+                    }
+
+                    let frame = geometry[plotFrame]
+
+                    switch phase {
+                    case let .active(location):
+                        guard frame.contains(location) else {
+                            clearDailyBreakdownHover()
+                            return
+                        }
+
+                        let plotX = location.x - frame.origin.x
+                        let plotY = location.y - frame.origin.y
+                        guard
+                            let hoveredDate = proxy.value(atX: plotX, as: Date.self),
+                            let hoveredHours = proxy.value(atY: plotY, as: Double.self),
+                            let day = weekDaySummaries.first(where: { calendar.isDate($0.displayDate, inSameDayAs: hoveredDate) }),
+                            hoveredHours >= 0
+                        else {
+                            clearDailyBreakdownHover()
+                            return
+                        }
+
+                        let matchedSegment = dailyBreakdownSegment(for: day, hoveredHours: hoveredHours)
+                        hoveredDailyBarDayID = day.id
+                        hoveredDailyBarSegmentID = matchedSegment?.id
+                    case .ended:
+                        clearDailyBreakdownHover()
+                    }
+                }
+        }
+    }
+
+    private func weeklyShareHoverOverlay(proxy: ChartProxy) -> some View {
+        GeometryReader { geometry in
+            Color.clear
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    guard let plotFrame = proxy.plotFrame else {
+                        hoveredPieProjectID = nil
+                        return
+                    }
+
+                    let frame = geometry[plotFrame]
+
+                    switch phase {
+                    case let .active(location):
+                        guard frame.contains(location) else {
+                            hoveredPieProjectID = nil
+                            return
+                        }
+
+                        hoveredPieProjectID = pieSummaryID(at: location, in: frame)
+                    case .ended:
+                        hoveredPieProjectID = nil
+                    }
+                }
+        }
+    }
+
+    private func dailyBreakdownSegment(
+        for day: AnalyticsWeekDaySummary,
+        hoveredHours: Double
+    ) -> AnalyticsWeekProjectDuration? {
+        let workedHours = day.workedDuration / 3_600
+        guard workedHours > 0, hoveredHours <= workedHours else {
+            return nil
+        }
+
+        var cumulativeHours = 0.0
+        for segment in day.projectSegments {
+            cumulativeHours += segment.duration / 3_600
+            if hoveredHours <= cumulativeHours {
+                return segment
+            }
+        }
+
+        return day.projectSegments.last
+    }
+
+    private func pieSummaryID(at location: CGPoint, in frame: CGRect) -> String? {
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        let dx = location.x - center.x
+        let dy = center.y - location.y
+        let distance = sqrt((dx * dx) + (dy * dy))
+        let outerRadius = min(frame.width, frame.height) * 0.5
+        let innerRadius = outerRadius * 0.56
+
+        guard distance >= innerRadius, distance <= outerRadius, workedDuration > 0 else {
+            return nil
+        }
+
+        var angle = atan2(dx, dy) * 180 / .pi
+        if angle < 0 {
+            angle += 360
+        }
+
+        var cumulativeAngle = 0.0
+        for summary in workedProjectSummaries {
+            let sweepAngle = (summary.totalDuration / workedDuration) * 360
+            let nextAngle = cumulativeAngle + sweepAngle
+            if angle >= cumulativeAngle && angle < nextAngle {
+                return summary.id
+            }
+            cumulativeAngle = nextAngle
+        }
+
+        return workedProjectSummaries.last?.id
+    }
+
+    private func clearDailyBreakdownHover() {
+        hoveredDailyBarSegmentID = nil
+        hoveredDailyBarDayID = nil
     }
 
     private var dailyBreakdownYAxis: some AxisContent {
@@ -663,6 +893,12 @@ private struct AnalyticsWeekDaySummary: Identifiable {
     let projectSegments: [AnalyticsWeekProjectDuration]
 
     var id: Date { dayStartDate }
+}
+
+private struct AnalyticsHoverInfo {
+    let title: String
+    let subtitle: String
+    let color: Color
 }
 
 private struct AnalyticsWeekProjectDuration: Identifiable {
