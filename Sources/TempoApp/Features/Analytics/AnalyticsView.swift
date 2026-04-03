@@ -11,15 +11,24 @@ struct AnalyticsView: View {
     @State private var hoveredPieProjectID: String?
 
     private let percentStyle = FloatingPointFormatStyle<Double>.Percent.percent.precision(.fractionLength(0))
+    // Curated for higher contrast on the light analytics background.
     private let projectPalette: [Color] = [
-        Color(red: 0.12, green: 0.46, blue: 0.78),
-        Color(red: 0.90, green: 0.41, blue: 0.24),
-        Color(red: 0.12, green: 0.62, blue: 0.50),
-        Color(red: 0.78, green: 0.26, blue: 0.43),
-        Color(red: 0.69, green: 0.52, blue: 0.14),
-        Color(red: 0.38, green: 0.35, blue: 0.78),
-        Color(red: 0.16, green: 0.57, blue: 0.67),
-        Color(red: 0.57, green: 0.41, blue: 0.24),
+        Color(red: 0.13, green: 0.45, blue: 0.75),
+        Color(red: 0.89, green: 0.42, blue: 0.24),
+        Color(red: 0.18, green: 0.61, blue: 0.34),
+        Color(red: 0.77, green: 0.22, blue: 0.43),
+        Color(red: 0.54, green: 0.34, blue: 0.72),
+        Color(red: 0.64, green: 0.49, blue: 0.13),
+        Color(red: 0.11, green: 0.58, blue: 0.66),
+        Color(red: 0.71, green: 0.27, blue: 0.18),
+        Color(red: 0.31, green: 0.38, blue: 0.82),
+        Color(red: 0.00, green: 0.58, blue: 0.46),
+        Color(red: 0.84, green: 0.17, blue: 0.29),
+        Color(red: 0.46, green: 0.25, blue: 0.61),
+        Color(red: 0.76, green: 0.54, blue: 0.10),
+        Color(red: 0.17, green: 0.50, blue: 0.34),
+        Color(red: 0.66, green: 0.22, blue: 0.55),
+        Color(red: 0.22, green: 0.55, blue: 0.86),
     ]
 
     var body: some View {
