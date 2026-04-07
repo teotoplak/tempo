@@ -46,8 +46,8 @@ struct CheckInTriggerContext: Equatable {
 
 enum CheckInTriggerSignal: Equatable {
     case recover(eventDate: Date, activityDate: Date?, allowScreenLockReturnFallback: Bool)
-    case screenLocked(at: Date)
-    case timerElapsed(at: Date)
+    case screenLocked(at: Date, activityDate: Date?)
+    case timerElapsed(at: Date, activityDate: Date?)
 }
 
 enum CheckInTriggerEffect: Equatable {
@@ -114,17 +114,18 @@ struct CheckInTriggerEngine {
                 prompt: prompt(for: runtimeState)
             )
 
-        case let .screenLocked(eventDate):
-            return decisionForScreenLock(context: context, eventDate: eventDate)
+        case let .screenLocked(eventDate, activityDate):
+            return decisionForScreenLock(context: context, eventDate: eventDate, activityDate: activityDate)
 
-        case let .timerElapsed(eventDate):
-            return decisionForTimerElapsed(context: context, eventDate: eventDate)
+        case let .timerElapsed(eventDate, activityDate):
+            return decisionForTimerElapsed(context: context, eventDate: eventDate, activityDate: activityDate)
         }
     }
 
     private func decisionForScreenLock(
         context: CheckInTriggerContext,
-        eventDate: Date
+        eventDate: Date,
+        activityDate: Date?
     ) -> CheckInTriggerDecision {
         if case .idle? = context.latestCheckIn?.kind {
             let runtimeState = recoverRuntimeState(
@@ -139,6 +140,11 @@ struct CheckInTriggerEngine {
             )
         }
 
+        let idleStartedAt = calculatedIdleStartDate(
+            activityDate: activityDate,
+            latestCheckIn: context.latestCheckIn,
+            factualIdleDate: eventDate
+        ) ?? eventDate
         let runtimeState = DerivedRuntimeState(
             nextCheckInAt: nil,
             isPromptOverdue: false,
@@ -146,33 +152,47 @@ struct CheckInTriggerEngine {
             isSilenced: false,
             silenceEndsAt: nil,
             isIdlePending: true,
-            pendingIdleStartedAt: eventDate,
+            pendingIdleStartedAt: idleStartedAt,
             pendingIdleEndedAt: nil,
             pendingIdleReason: "screen-locked"
+        )
+
+        var effects = calculatedIdleEffects(
+            activityDate: activityDate,
+            latestCheckIn: context.latestCheckIn,
+            factualIdleDate: eventDate,
+            idleKind: .automaticThreshold
+        )
+        effects.append(
+            .persistIdleCheckIn(
+                at: eventDate,
+                idleKind: .automaticThreshold,
+                source: "screen-locked"
+            )
         )
 
         return CheckInTriggerDecision(
             runtimeState: runtimeState,
             prompt: .hidden,
-            effects: [
-                .persistIdleCheckIn(
-                    at: eventDate,
-                    idleKind: .automaticThreshold,
-                    source: "screen-locked"
-                )
-            ]
+            effects: effects
         )
     }
 
     private func decisionForTimerElapsed(
         context: CheckInTriggerContext,
-        eventDate: Date
+        eventDate: Date,
+        activityDate: Date?
     ) -> CheckInTriggerDecision {
         if
             let promptIdleMarkAt = promptIdleMarkAt(for: context),
             eventDate >= promptIdleMarkAt,
             context.latestCheckIn?.isIdle != true
         {
+            let idleStartedAt = calculatedIdleStartDate(
+                activityDate: activityDate,
+                latestCheckIn: context.latestCheckIn,
+                factualIdleDate: promptIdleMarkAt
+            ) ?? promptIdleMarkAt
             let runtimeState = DerivedRuntimeState(
                 nextCheckInAt: nil,
                 isPromptOverdue: false,
@@ -180,21 +200,29 @@ struct CheckInTriggerEngine {
                 isSilenced: false,
                 silenceEndsAt: nil,
                 isIdlePending: true,
-                pendingIdleStartedAt: promptIdleMarkAt,
+                pendingIdleStartedAt: idleStartedAt,
                 pendingIdleEndedAt: nil,
                 pendingIdleReason: "unanswered-prompt"
             )
 
+            var effects = calculatedIdleEffects(
+                activityDate: activityDate,
+                latestCheckIn: context.latestCheckIn,
+                factualIdleDate: promptIdleMarkAt,
+                idleKind: .unansweredPrompt
+            )
+            effects.append(
+                .persistIdleCheckIn(
+                    at: promptIdleMarkAt,
+                    idleKind: .unansweredPrompt,
+                    source: "unanswered-prompt"
+                )
+            )
+
             return CheckInTriggerDecision(
                 runtimeState: runtimeState,
-                prompt: .unansweredPrompt(startedAt: promptIdleMarkAt),
-                effects: [
-                    .persistIdleCheckIn(
-                        at: promptIdleMarkAt,
-                        idleKind: .unansweredPrompt,
-                        source: "unanswered-prompt"
-                    )
-                ]
+                prompt: .unansweredPrompt(startedAt: idleStartedAt),
+                effects: effects
             )
         }
 
@@ -378,6 +406,42 @@ struct CheckInTriggerEngine {
         return promptPresentedAt.addingTimeInterval(
             TimeInterval(context.settings.idleThresholdMinutes * 60)
         )
+    }
+
+    private func calculatedIdleEffects(
+        activityDate: Date?,
+        latestCheckIn: CheckInTriggerLatestCheckIn?,
+        factualIdleDate: Date,
+        idleKind: TimeAllocationIdleKind
+    ) -> [CheckInTriggerEffect] {
+        guard let idleStartedAt = calculatedIdleStartDate(
+            activityDate: activityDate,
+            latestCheckIn: latestCheckIn,
+            factualIdleDate: factualIdleDate
+        ), idleStartedAt < factualIdleDate else {
+            return []
+        }
+
+        return [
+            .persistIdleCheckIn(
+                at: idleStartedAt,
+                idleKind: idleKind,
+                source: "last-interaction-calculation"
+            )
+        ]
+    }
+
+    private func calculatedIdleStartDate(
+        activityDate: Date?,
+        latestCheckIn: CheckInTriggerLatestCheckIn?,
+        factualIdleDate: Date
+    ) -> Date? {
+        guard let activityDate else {
+            return nil
+        }
+
+        let lowerBound = latestCheckIn?.timestamp ?? activityDate
+        return min(max(activityDate, lowerBound), factualIdleDate)
     }
 
     private func nextDayCutoff(after date: Date, dayCutoffHour: Int) -> Date {

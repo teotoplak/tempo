@@ -137,6 +137,77 @@ final class CheckInTriggerScenarioTests: XCTestCase {
             [.persistIdleCheckIn(at: time(1, 30), idleKind: .unansweredPrompt, source: "unanswered-prompt")]
         )
     }
+
+    func test_screenLockWithEarlierActivityDatePersistsCalculatedAndFactualIdle() {
+        let scenario = CheckInTriggerScenario()
+            .givenProjectCheckIn(at: time(1, 0))
+            .whenScreenLocks(at: time(1, 10), sampledActivityDate: time(1, 6))
+
+        XCTAssertEqual(scenario.outcome.state.pendingIdleStartedAt, time(1, 6))
+        XCTAssertEqual(
+            scenario.outcome.effects,
+            [
+                .persistIdleCheckIn(
+                    at: time(1, 6),
+                    idleKind: .automaticThreshold,
+                    source: "last-interaction-calculation"
+                ),
+                .persistIdleCheckIn(
+                    at: time(1, 10),
+                    idleKind: .automaticThreshold,
+                    source: "screen-locked"
+                )
+            ]
+        )
+    }
+
+    func test_screenLockClampsCalculatedIdleStartToLatestProjectCheckIn() {
+        let scenario = CheckInTriggerScenario()
+            .givenProjectCheckIn(at: time(1, 5))
+            .whenScreenLocks(at: time(1, 10), sampledActivityDate: time(1, 0))
+
+        XCTAssertEqual(scenario.outcome.state.pendingIdleStartedAt, time(1, 5))
+        XCTAssertEqual(
+            scenario.outcome.effects,
+            [
+                .persistIdleCheckIn(
+                    at: time(1, 5),
+                    idleKind: .automaticThreshold,
+                    source: "last-interaction-calculation"
+                ),
+                .persistIdleCheckIn(
+                    at: time(1, 10),
+                    idleKind: .automaticThreshold,
+                    source: "screen-locked"
+                )
+            ]
+        )
+    }
+
+    func test_unansweredPromptWithEarlierActivityDatePersistsCalculatedAndFactualIdle() {
+        let scenario = CheckInTriggerScenario()
+            .givenProjectCheckIn(at: time(1, 0))
+            .whenTimerElapses(at: time(1, 25))
+            .whenTimerElapses(at: time(1, 30), sampledActivityDate: time(1, 28))
+
+        XCTAssertEqual(scenario.outcome.prompt, .unansweredPrompt(startedAt: time(1, 28)))
+        XCTAssertEqual(scenario.outcome.state.pendingIdleStartedAt, time(1, 28))
+        XCTAssertEqual(
+            scenario.outcome.effects,
+            [
+                .persistIdleCheckIn(
+                    at: time(1, 28),
+                    idleKind: .unansweredPrompt,
+                    source: "last-interaction-calculation"
+                ),
+                .persistIdleCheckIn(
+                    at: time(1, 30),
+                    idleKind: .unansweredPrompt,
+                    source: "unanswered-prompt"
+                )
+            ]
+        )
+    }
 }
 
 private struct CheckInTriggerScenario {
@@ -266,8 +337,8 @@ private struct CheckInTriggerScenario {
         )
     }
 
-    func whenScreenLocks(at timestamp: Date) -> Self {
-        applying(.screenLocked(at: timestamp), eventDate: timestamp)
+    func whenScreenLocks(at timestamp: Date, sampledActivityDate: Date? = nil) -> Self {
+        applying(.screenLocked(at: timestamp, activityDate: sampledActivityDate), eventDate: timestamp)
     }
 
     func whenScreenUnlocks(
@@ -285,8 +356,8 @@ private struct CheckInTriggerScenario {
         )
     }
 
-    func whenTimerElapses(at timestamp: Date) -> Self {
-        applying(.timerElapsed(at: timestamp), eventDate: timestamp)
+    func whenTimerElapses(at timestamp: Date, sampledActivityDate: Date? = nil) -> Self {
+        applying(.timerElapsed(at: timestamp, activityDate: sampledActivityDate), eventDate: timestamp)
     }
 
     private func applying(

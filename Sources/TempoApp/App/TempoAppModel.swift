@@ -52,6 +52,36 @@ enum IdleResolutionError: LocalizedError {
 @Observable
 final class TempoAppModel {
     private static let promptProjectDisplayLimit = 4
+    private static let userActivityEventSamples: [(label: String, state: CGEventSourceStateID, event: CGEventType)] = [
+        ("hid-mouse-moved", .hidSystemState, .mouseMoved),
+        ("combined-mouse-moved", .combinedSessionState, .mouseMoved),
+        ("hid-left-mouse-down", .hidSystemState, .leftMouseDown),
+        ("combined-left-mouse-down", .combinedSessionState, .leftMouseDown),
+        ("hid-left-mouse-up", .hidSystemState, .leftMouseUp),
+        ("combined-left-mouse-up", .combinedSessionState, .leftMouseUp),
+        ("hid-right-mouse-down", .hidSystemState, .rightMouseDown),
+        ("combined-right-mouse-down", .combinedSessionState, .rightMouseDown),
+        ("hid-right-mouse-up", .hidSystemState, .rightMouseUp),
+        ("combined-right-mouse-up", .combinedSessionState, .rightMouseUp),
+        ("hid-other-mouse-down", .hidSystemState, .otherMouseDown),
+        ("combined-other-mouse-down", .combinedSessionState, .otherMouseDown),
+        ("hid-other-mouse-up", .hidSystemState, .otherMouseUp),
+        ("combined-other-mouse-up", .combinedSessionState, .otherMouseUp),
+        ("hid-left-mouse-dragged", .hidSystemState, .leftMouseDragged),
+        ("combined-left-mouse-dragged", .combinedSessionState, .leftMouseDragged),
+        ("hid-right-mouse-dragged", .hidSystemState, .rightMouseDragged),
+        ("combined-right-mouse-dragged", .combinedSessionState, .rightMouseDragged),
+        ("hid-other-mouse-dragged", .hidSystemState, .otherMouseDragged),
+        ("combined-other-mouse-dragged", .combinedSessionState, .otherMouseDragged),
+        ("hid-scroll-wheel", .hidSystemState, .scrollWheel),
+        ("combined-scroll-wheel", .combinedSessionState, .scrollWheel),
+        ("hid-key-down", .hidSystemState, .keyDown),
+        ("combined-key-down", .combinedSessionState, .keyDown),
+        ("hid-key-up", .hidSystemState, .keyUp),
+        ("combined-key-up", .combinedSessionState, .keyUp),
+        ("hid-flags-changed", .hidSystemState, .flagsChanged),
+        ("combined-flags-changed", .combinedSessionState, .flagsChanged)
+    ]
 
     enum WindowSection: String, CaseIterable, Identifiable {
         case projects
@@ -196,7 +226,7 @@ final class TempoAppModel {
         trace("model-initialized", metadata: ["diagnosticsLogPath": diagnosticsLogPath])
     }
 
-    func performInitialLaunchIfNeeded() {
+    func performInitialLaunchIfNeeded(activityDate: Date? = nil) {
         guard !hasHandledInitialLaunch else {
             return
         }
@@ -205,7 +235,11 @@ final class TempoAppModel {
         trace("initial-launch-started")
         observeWorkspaceWake()
         reconcileLaunchAtLoginPreferenceWithSystem()
-        recoverSchedulerState(eventDate: clock.now, allowScreenLockReturnFallback: true)
+        recoverSchedulerState(
+            eventDate: clock.now,
+            activityDate: activityDate,
+            allowScreenLockReturnFallback: true
+        )
         reloadAnalytics()
         presentLaunchCheckInPrompt()
     }
@@ -744,14 +778,16 @@ final class TempoAppModel {
         reloadAnalytics()
     }
 
-    func handleScreenLock() {
+    func handleScreenLock(activityDate: Date? = nil) {
+        let referenceDate = clock.now
+        let sampledActivityDate = activityDate ?? currentUserActivityDate(referenceDate: referenceDate)
         trace("handle-screen-lock")
         guard latestCheckInRecord()?.kind != "idle" else {
-            refreshRuntimeState(eventDate: clock.now)
+            refreshRuntimeState(eventDate: referenceDate)
             return
         }
         let decision = checkInTriggerEngine.decide(
-            signal: .screenLocked(at: clock.now),
+            signal: .screenLocked(at: referenceDate, activityDate: sampledActivityDate),
             context: makeCheckInTriggerContext()
         )
         applyTriggerEffects(decision.effects)
@@ -1178,7 +1214,7 @@ final class TempoAppModel {
     private func makeCheckInTriggerContext() -> CheckInTriggerContext {
         CheckInTriggerContext(
             settings: CheckInTriggerSettings(settings),
-            latestCheckIn: latestCheckInRecord().flatMap(Self.checkInTriggerLatestCheckIn(from:)),
+            latestCheckIn: latestCheckInForTrigger(),
             knownNextCheckInAt: schedulerStateRecord.nextCheckInAt ?? nextCheckInAt,
             runtimeState: DerivedRuntimeState(
                 nextCheckInAt: nextCheckInAt,
@@ -1192,6 +1228,46 @@ final class TempoAppModel {
                 pendingIdleReason: pendingIdleReason
             ),
             promptPresentedAt: promptPresentedAt
+        )
+    }
+
+    private func latestCheckInForTrigger() -> CheckInTriggerLatestCheckIn? {
+        let descriptor = FetchDescriptor<CheckInRecord>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        guard let latestRecord = try? modelContext.fetch(descriptor).first else {
+            return nil
+        }
+
+        guard
+            latestRecord.kind == "idle",
+            let latestIdleKindRawValue = latestRecord.idleKind,
+            let latestIdleKind = TimeAllocationIdleKind(persistedValue: latestIdleKindRawValue),
+            latestIdleKind != .doneForDay
+        else {
+            return Self.checkInTriggerLatestCheckIn(from: latestRecord)
+        }
+
+        let records = (try? modelContext.fetch(descriptor)) ?? [latestRecord]
+        var idleStartedAt = latestRecord.timestamp
+        for record in records {
+            guard record.kind == "idle" else {
+                break
+            }
+
+            guard
+                let idleKindRawValue = record.idleKind,
+                let idleKind = TimeAllocationIdleKind(persistedValue: idleKindRawValue),
+                idleKind == latestIdleKind
+            else {
+                break
+            }
+
+            idleStartedAt = min(idleStartedAt, record.timestamp)
+        }
+
+        return CheckInTriggerLatestCheckIn(
+            timestamp: idleStartedAt,
+            kind: .idle(latestIdleKind),
+            source: latestRecord.source
         )
     }
 
@@ -1422,7 +1498,10 @@ final class TempoAppModel {
         scheduledPromptTimer = nil
         trace("runtime-timer-fired")
         let decision = checkInTriggerEngine.decide(
-            signal: .timerElapsed(at: clock.now),
+            signal: .timerElapsed(
+                at: clock.now,
+                activityDate: currentUserActivityDate(referenceDate: clock.now)
+            ),
             context: makeCheckInTriggerContext()
         )
         applyTriggerEffects(decision.effects)
@@ -1519,18 +1598,26 @@ final class TempoAppModel {
     }
 
     private func currentUserActivityDate(referenceDate: Date) -> Date {
-        let idleSeconds = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .null)
-        guard idleSeconds.isFinite, idleSeconds >= 0 else {
-            trace("activity-sample-invalid", metadata: ["idleSeconds": "\(idleSeconds)"])
+        let samples: [(label: String, idleSeconds: TimeInterval)] = Self.userActivityEventSamples.compactMap { sample in
+            let idleSeconds = CGEventSource.secondsSinceLastEventType(sample.state, eventType: sample.event)
+            guard idleSeconds.isFinite, idleSeconds >= 0 else {
+                return nil
+            }
+
+            return (label: sample.label, idleSeconds: idleSeconds)
+        }
+        guard let sample = samples.min(by: { lhs, rhs in lhs.idleSeconds < rhs.idleSeconds }) else {
+            trace("activity-sample-invalid", metadata: ["reason": "no-valid-event-samples"])
             return referenceDate
         }
 
-        let activityDate = referenceDate.addingTimeInterval(-idleSeconds)
+        let activityDate = referenceDate.addingTimeInterval(-sample.idleSeconds)
         trace(
             "activity-sampled",
             metadata: [
-                "idleSeconds": Self.traceInterval(idleSeconds),
-                "activityDate": Self.traceTimestamp(activityDate)
+                "idleSeconds": Self.traceInterval(sample.idleSeconds),
+                "activityDate": Self.traceTimestamp(activityDate),
+                "sampleSource": sample.label
             ]
         )
         return activityDate

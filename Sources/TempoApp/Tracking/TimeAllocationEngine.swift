@@ -56,6 +56,7 @@ enum TimeAllocationRule: String, Equatable {
     case sameBucket = "same-bucket"
     case splitBetweenProjects = "split-between-projects"
     case idleDominates = "idle-dominates"
+    case projectBeforeIdle = "project-before-idle"
 }
 
 struct TimeAllocationCheckIn: Equatable, Identifiable {
@@ -292,6 +293,17 @@ struct TimeAllocationEngine {
                         )
                     )
                 }
+            case let (.project(id: leadingID, name: leadingName), .idle):
+                intervals.append(
+                    TimeAllocationInterval(
+                        startDate: leadingCheckIn.timestamp,
+                        endDate: trailingCheckIn.timestamp,
+                        bucket: .project(id: leadingID, name: leadingName),
+                        rule: .projectBeforeIdle,
+                        leadingCheckInID: leadingCheckIn.id,
+                        trailingCheckInID: trailingCheckIn.id
+                    )
+                )
             default:
                 intervals.append(
                     TimeAllocationInterval(

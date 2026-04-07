@@ -178,6 +178,76 @@ final class CheckInCompletionTests: XCTestCase {
     }
 
     @MainActor
+    func testScreenLockStoresCalculatedIdleStartBeforeFactualLockEvent() throws {
+        let lockDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let projectStart = lockDate.addingTimeInterval(-(30 * 60))
+        let lastInteractionDate = lockDate.addingTimeInterval(-(8 * 60))
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: lockDate)
+        )
+        let project = ProjectRecord(name: "Client Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        appModel.modelContext.insert(projectCheckIn(project: project, at: projectStart))
+        try appModel.modelContext.save()
+
+        appModel.handleScreenLock(activityDate: lastInteractionDate)
+
+        let checkIns = try appModel.modelContext.fetch(
+            FetchDescriptor<CheckInRecord>(sortBy: [SortDescriptor(\.timestamp)])
+        )
+        XCTAssertEqual(checkIns.count, 3)
+        XCTAssertEqual(checkIns[0].kind, "project")
+        XCTAssertEqual(checkIns[1].kind, "idle")
+        XCTAssertEqual(checkIns[1].timestamp, lastInteractionDate)
+        XCTAssertEqual(checkIns[1].source, "last-interaction-calculation")
+        XCTAssertEqual(checkIns[1].idleKind, TimeAllocationIdleKind.automaticThreshold.rawValue)
+        XCTAssertEqual(checkIns[2].kind, "idle")
+        XCTAssertEqual(checkIns[2].timestamp, lockDate)
+        XCTAssertEqual(checkIns[2].source, "screen-locked")
+        XCTAssertEqual(appModel.pendingIdleStartedAt, lastInteractionDate)
+        XCTAssertEqual(appModel.pendingIdleReason, "screen-locked")
+    }
+
+    @MainActor
+    func testRecoveryUsesCalculatedIdleStartFromTrailingIdleBlock() throws {
+        let recoveryDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let lockDate = recoveryDate.addingTimeInterval(-(10 * 60))
+        let lastInteractionDate = recoveryDate.addingTimeInterval(-(18 * 60))
+        let projectStart = recoveryDate.addingTimeInterval(-(30 * 60))
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: recoveryDate)
+        )
+        let project = ProjectRecord(name: "Client Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        appModel.modelContext.insert(projectCheckIn(project: project, at: projectStart))
+        appModel.modelContext.insert(
+            CheckInRecord(
+                timestamp: lastInteractionDate,
+                kind: "idle",
+                source: "last-interaction-calculation",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        appModel.modelContext.insert(
+            CheckInRecord(
+                timestamp: lockDate,
+                kind: "idle",
+                source: "screen-locked",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try appModel.modelContext.save()
+
+        appModel.recoverSchedulerState(eventDate: recoveryDate, activityDate: recoveryDate)
+
+        XCTAssertEqual(appModel.pendingIdleStartedAt, lastInteractionDate)
+        XCTAssertEqual(appModel.pendingIdleEndedAt, recoveryDate)
+        XCTAssertEqual(appModel.pendingIdleReason, "screen-locked")
+    }
+
+    @MainActor
     func testSelectingProjectAfterIdleReturnStoresOnlyTheReturningProjectCheckIn() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let appModel = TempoAppModel(

@@ -84,7 +84,7 @@ final class TempoAppBootstrapTests: XCTestCase {
             clock: FixedBootstrapClock(now: now)
         )
 
-        model.performInitialLaunchIfNeeded()
+        model.performInitialLaunchIfNeeded(activityDate: now)
 
         XCTAssertTrue(model.checkInPromptState.isPresented)
         XCTAssertTrue(model.isPromptOverdue)
@@ -380,7 +380,7 @@ final class TempoAppBootstrapTests: XCTestCase {
         )
         try? model.modelContext.save()
 
-        model.performInitialLaunchIfNeeded()
+        model.performInitialLaunchIfNeeded(activityDate: now)
 
         XCTAssertFalse(model.isSilenced)
         XCTAssertNil(model.silenceEndsAt)
@@ -409,7 +409,7 @@ final class TempoAppBootstrapTests: XCTestCase {
         )
         try model.modelContext.save()
 
-        model.performInitialLaunchIfNeeded()
+        model.performInitialLaunchIfNeeded(activityDate: now)
 
         XCTAssertTrue(model.isIdlePending)
         XCTAssertEqual(model.pendingIdleStartedAt, pendingIdleStart)

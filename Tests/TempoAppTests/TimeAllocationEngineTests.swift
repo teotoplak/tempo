@@ -63,7 +63,7 @@ final class TimeAllocationEngineTests: XCTestCase {
         XCTAssertEqual(summary.allocatedIntervals[1].duration, 31)
     }
 
-    func testProjectThenIdleAllocatesWholeIntervalToIdle() {
+    func testProjectThenIdleAllocatesWholeIntervalToProject() {
         let summary = engine.summary(
             checkIns: [
                 projectCheckIn("Project A", id: projectID(1), at: date(2026, 3, 16, 9, 0, 0)),
@@ -76,9 +76,10 @@ final class TimeAllocationEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(summary.allocatedIntervals.count, 1)
-        XCTAssertEqual(summary.allocatedIntervals[0].bucket, .idle)
+        XCTAssertEqual(summary.allocatedIntervals[0].bucket, .project(id: projectID(1), name: "Project A"))
+        XCTAssertEqual(summary.allocatedIntervals[0].rule, .projectBeforeIdle)
         XCTAssertEqual(summary.allocatedIntervals[0].duration, 10 * 60)
-        XCTAssertEqual(summary.bucketSummaries.map(\.bucket), [.idle])
+        XCTAssertEqual(summary.bucketSummaries.map(\.bucket), [.project(id: projectID(1), name: "Project A")])
     }
 
     func testIdleThenProjectAllocatesWholeIntervalToIdle() {
@@ -97,6 +98,24 @@ final class TimeAllocationEngineTests: XCTestCase {
         XCTAssertEqual(summary.allocatedIntervals.count, 1)
         XCTAssertEqual(summary.allocatedIntervals[0].bucket, .idle)
         XCTAssertEqual(summary.allocatedIntervals[0].rule, .idleDominates)
+    }
+
+    func testIdleThenIdleAllocatesWholeIntervalToIdle() {
+        let summary = engine.summary(
+            checkIns: [
+                idleCheckIn(.automaticThreshold, at: date(2026, 3, 16, 9, 0, 0)),
+                idleCheckIn(.automaticThreshold, at: date(2026, 3, 16, 9, 10, 0)),
+            ],
+            range: .day,
+            referenceDate: date(2026, 3, 16, 12, 0, 0),
+            calendar: testCalendar,
+            dayCutoffHour: 6
+        )
+
+        XCTAssertEqual(summary.allocatedIntervals.count, 1)
+        XCTAssertEqual(summary.allocatedIntervals[0].bucket, .idle)
+        XCTAssertEqual(summary.allocatedIntervals[0].rule, .idleDominates)
+        XCTAssertEqual(summary.allocatedIntervals[0].duration, 10 * 60)
     }
 
     func testSameTimestampProducesNoAllocatedTime() {

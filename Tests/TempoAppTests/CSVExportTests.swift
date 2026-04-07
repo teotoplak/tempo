@@ -40,7 +40,7 @@ final class CSVExportTests: XCTestCase {
 
         XCTAssertEqual(lines[1], "2026-03-16,08:30,08:45,15,Alpha")
         XCTAssertEqual(lines[2], "2026-03-16,08:45,09:00,15,Beta")
-        XCTAssertEqual(lines[3], "2026-03-16,09:00,09:30,30,Idle")
+        XCTAssertEqual(lines[3], "2026-03-16,09:00,09:30,30,Beta")
     }
 
     @MainActor
