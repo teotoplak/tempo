@@ -96,7 +96,7 @@ struct MenuBarRootView: View {
 
                     if appModel.isSilenced {
                         secondaryActionButton(title: "Unsilence", icon: "speaker.wave.2.fill") {
-                            try? appModel.endSilenceMode()
+                            try? appModel.endSilenceMode(trigger: "menu-bar")
                         }
                     } else {
                         secondaryActionButton(title: "Quit", icon: "power") {
@@ -157,7 +157,7 @@ struct MenuBarRootView: View {
     private var primaryActionButton: some View {
         Button {
             presentDetachedPrompt {
-                appModel.checkInNow()
+                appModel.checkInNow(trigger: "menu-bar")
                 appModel.presentCheckInPromptIfNeeded()
             }
         } label: {
@@ -183,7 +183,7 @@ struct MenuBarRootView: View {
 
     private var doneForDayActionButton: some View {
         Button {
-            try? appModel.silenceForRestOfDay()
+            try? appModel.silenceForRestOfDay(trigger: "menu-bar")
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "moon.stars.fill")

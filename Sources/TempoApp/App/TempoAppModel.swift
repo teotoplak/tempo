@@ -437,7 +437,7 @@ final class TempoAppModel {
 
     func menuBarPrimaryStatus(at date: Date) -> String {
         if isSilenced, let silenceEndsAt {
-            return "Silenced until \(Self.formattedClockTime(silenceEndsAt))"
+            return silencePrimaryStatus(at: date, silenceEndsAt: silenceEndsAt)
         }
 
         if isPromptOverdue {
@@ -454,7 +454,7 @@ final class TempoAppModel {
 
     func menuBarSecondaryStatus(at date: Date) -> String {
         if isSilenced, let silenceEndsAt {
-            return "Resumes at daily cutoff (\(Self.formattedClockTime(silenceEndsAt)))"
+            return silenceSecondaryStatus(at: date, silenceEndsAt: silenceEndsAt)
         }
 
         if isPromptOverdue {
@@ -714,7 +714,8 @@ final class TempoAppModel {
         try selectProjectForPrompt(project)
     }
 
-    func silenceForRestOfDay() throws {
+    func silenceForRestOfDay(trigger: String = "unknown") throws {
+        trace("done-for-day-requested", metadata: ["source": trigger])
         persistIdleCheckIn(
             at: clock.now,
             idleKind: .doneForDay,
@@ -728,7 +729,8 @@ final class TempoAppModel {
         dismissCheckInPrompt()
     }
 
-    func endSilenceMode() throws {
+    func endSilenceMode(trigger: String = "unknown") throws {
+        trace("unsilence-requested", metadata: ["source": trigger])
         persistResumeCheckIn(at: clock.now, source: "unsilence")
         try modelContext.save()
 
@@ -736,7 +738,8 @@ final class TempoAppModel {
         refreshCheckInPromptState()
     }
 
-    func checkInNow() {
+    func checkInNow(trigger: String = "unknown") {
+        trace("check-in-now-requested", metadata: ["source": trigger])
         if isIdlePending {
             handleIdleReturn()
             return
@@ -1805,6 +1808,43 @@ final class TempoAppModel {
         canShowNextMenuBarDay = daySnapshot.period.startDate < currentDayPeriod.startDate
     }
 
+    private func silencePrimaryStatus(at referenceDate: Date, silenceEndsAt: Date) -> String {
+        let cutoffTime = Self.formattedClockTime(silenceEndsAt)
+        guard let silenceDayDescriptor = silenceDayDescriptor(for: silenceEndsAt, relativeTo: referenceDate) else {
+            return "Silenced until \(cutoffTime)"
+        }
+
+        return "Silenced until \(silenceDayDescriptor) at \(cutoffTime)"
+    }
+
+    private func silenceSecondaryStatus(at referenceDate: Date, silenceEndsAt: Date) -> String {
+        let cutoffTime = Self.formattedClockTime(silenceEndsAt)
+        guard let silenceDayDescriptor = silenceDayDescriptor(for: silenceEndsAt, relativeTo: referenceDate) else {
+            return "Resumes at daily cutoff (\(cutoffTime))"
+        }
+
+        if silenceDayDescriptor == "tomorrow" {
+            return "Resumes at tomorrow's daily cutoff (\(cutoffTime))"
+        }
+
+        return "Resumes at daily cutoff on \(silenceDayDescriptor) (\(cutoffTime))"
+    }
+
+    private func silenceDayDescriptor(for silenceEndsAt: Date, relativeTo referenceDate: Date) -> String? {
+        if calendar.isDate(silenceEndsAt, inSameDayAs: referenceDate) {
+            return nil
+        }
+
+        if
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: referenceDate),
+            calendar.isDate(silenceEndsAt, inSameDayAs: tomorrow)
+        {
+            return "tomorrow"
+        }
+
+        return Self.formattedMonthDay(silenceEndsAt)
+    }
+
     nonisolated static func formattedElapsedText(for elapsedDuration: TimeInterval) -> String {
         let elapsedMinutes = max(Int(elapsedDuration / 60), 0)
         return "Elapsed \(elapsedMinutes) min"
@@ -1812,6 +1852,10 @@ final class TempoAppModel {
 
     nonisolated static func formattedClockTime(_ date: Date) -> String {
         date.formatted(date: .omitted, time: .shortened)
+    }
+
+    nonisolated static func formattedMonthDay(_ date: Date) -> String {
+        date.formatted(.dateTime.month(.abbreviated).day())
     }
 
     nonisolated static func formattedCompactDuration(_ duration: TimeInterval) -> String {

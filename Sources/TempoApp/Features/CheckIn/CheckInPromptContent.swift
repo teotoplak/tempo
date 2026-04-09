@@ -107,7 +107,7 @@ struct CheckInPromptContent: View {
             Spacer(minLength: 0)
 
             Button {
-                try? appModel.silenceForRestOfDay()
+                try? appModel.silenceForRestOfDay(trigger: "prompt")
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "moon.stars.fill")

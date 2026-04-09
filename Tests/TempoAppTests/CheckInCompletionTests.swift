@@ -372,9 +372,26 @@ final class CheckInCompletionTests: XCTestCase {
         let checkIns = try appModel.modelContext.fetch(FetchDescriptor<CheckInRecord>())
         XCTAssertEqual(checkIns.count, 1)
         XCTAssertEqual(checkIns[0].kind, "idle")
+        XCTAssertEqual(checkIns[0].source, "done-for-day")
         XCTAssertEqual(checkIns[0].idleKind, TimeAllocationIdleKind.doneForDay.rawValue)
         XCTAssertTrue(appModel.isSilenced)
         XCTAssertEqual(appModel.silenceEndsAt, date(2026, 3, 17, 6, 0, 0))
+    }
+
+    @MainActor
+    func testDoneForDayMenuBarStatusClarifiesTomorrowCutoff() throws {
+        let now = date(2026, 3, 16, 21, 15, 0)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now),
+            calendar: testCalendar
+        )
+        appModel.settings.analyticsDayCutoffHour = 6
+
+        try appModel.silenceForRestOfDay()
+
+        XCTAssertTrue(appModel.menuBarPrimaryStatus(at: now).contains("tomorrow"))
+        XCTAssertTrue(appModel.menuBarSecondaryStatus(at: now).contains("tomorrow"))
     }
 
     private func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int, _ second: Int) -> Date {
