@@ -52,6 +52,7 @@ enum IdleResolutionError: LocalizedError {
 @Observable
 final class TempoAppModel {
     private static let promptProjectDisplayLimit = 4
+    private static let pendingIdlePromptReminderInterval: TimeInterval = 60
     private static let userActivityEventSamples: [(label: String, state: CGEventSourceStateID, event: CGEventType)] = [
         ("hid-mouse-moved", .hidSystemState, .mouseMoved),
         ("combined-mouse-moved", .combinedSessionState, .mouseMoved),
@@ -146,6 +147,7 @@ final class TempoAppModel {
     private var lastSavedPollingIntervalMinutes = 25
     private var isMenuBarWindowVisible = false
     private var promptPresentedAt: Date?
+    private var pendingIdlePromptSnoozedUntil: Date?
 
     private let clock: any SchedulerClock
     private let calendar: Calendar
@@ -395,8 +397,16 @@ final class TempoAppModel {
     }
 
     func dismissCheckInPrompt() {
+        let shouldRemindPendingIdlePrompt = shouldPresentPendingIdlePrompt
+        if shouldRemindPendingIdlePrompt {
+            pendingIdlePromptSnoozedUntil = clock.now.addingTimeInterval(Self.pendingIdlePromptReminderInterval)
+        }
         checkInPromptState.isPresented = false
-        trace("dismiss-check-in-prompt")
+        var metadata = ["willRemindPendingIdlePrompt": "\(shouldRemindPendingIdlePrompt)"]
+        if let pendingIdlePromptSnoozedUntil {
+            metadata["pendingIdlePromptReminderAt"] = Self.traceTimestamp(pendingIdlePromptSnoozedUntil)
+        }
+        trace("dismiss-check-in-prompt", metadata: metadata)
         checkInPromptWindowController?.hide()
         schedulePromptTimerIfNeeded()
     }
@@ -1377,6 +1387,9 @@ final class TempoAppModel {
         pendingIdleStartedAt = runtimeState.pendingIdleStartedAt
         pendingIdleEndedAt = runtimeState.pendingIdleEndedAt
         pendingIdleReason = runtimeState.pendingIdleReason
+        if !runtimeState.isIdlePending || runtimeState.pendingIdleEndedAt == nil {
+            pendingIdlePromptSnoozedUntil = nil
+        }
         pendingIdleDuration = max(
             (runtimeState.pendingIdleEndedAt ?? runtimeState.pendingIdleStartedAt ?? clock.now)
                 .timeIntervalSince(runtimeState.pendingIdleStartedAt ?? clock.now),
@@ -1432,7 +1445,9 @@ final class TempoAppModel {
     }
 
     private var shouldPresentPendingIdlePrompt: Bool {
-        isIdlePending && pendingIdleEndedAt != nil
+        isIdlePending &&
+            pendingIdleEndedAt != nil &&
+            (pendingIdlePromptSnoozedUntil.map { $0 <= clock.now } ?? true)
     }
 
     private var shouldPresentUnansweredIdlePrompt: Bool {
@@ -1523,6 +1538,14 @@ final class TempoAppModel {
     func nextRuntimeUpdateAt(referenceDate: Date) -> Date? {
         if shouldPresentPendingIdlePrompt {
             return nil
+        }
+
+        if
+            isIdlePending,
+            pendingIdleEndedAt != nil,
+            let pendingIdlePromptSnoozedUntil
+        {
+            return pendingIdlePromptSnoozedUntil
         }
 
         let candidates = [nextCheckInAt, silenceEndsAt].compactMap { $0 }

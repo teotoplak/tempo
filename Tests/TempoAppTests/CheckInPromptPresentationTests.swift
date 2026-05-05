@@ -260,6 +260,44 @@ final class CheckInPromptPresentationTests: XCTestCase {
         XCTAssertEqual(records.first?.kind, "idle")
         XCTAssertEqual(records.first?.source, "unanswered-prompt")
     }
+
+    @MainActor
+    func testDismissingReturnedIdlePromptSnoozesReminderWithoutCreatingCheckIn() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let clock = MutablePresentationClock(now: now)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: clock,
+            calendar: fixedPresentationCalendar(),
+            launchAtLoginController: FixedPresentationLaunchAtLoginController(isEnabled: false)
+        )
+
+        appModel.modelContext.insert(
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(15 * 60)),
+                kind: "idle",
+                source: "screen-locked",
+                idleKind: TimeAllocationIdleKind.automaticThreshold.rawValue
+            )
+        )
+        try appModel.modelContext.save()
+
+        appModel.recoverSchedulerState(eventDate: now, activityDate: now)
+        XCTAssertTrue(appModel.checkInPromptState.isPresented)
+
+        appModel.dismissCheckInPrompt()
+
+        XCTAssertFalse(appModel.checkInPromptState.isPresented)
+        XCTAssertEqual(appModel.nextRuntimeUpdateAt(referenceDate: now), now.addingTimeInterval(60))
+        XCTAssertEqual(try appModel.modelContext.fetch(FetchDescriptor<CheckInRecord>()).count, 1)
+
+        appModel.refreshCheckInPromptState()
+        XCTAssertFalse(appModel.checkInPromptState.isPresented)
+
+        clock.now = now.addingTimeInterval(60)
+        appModel.refreshCheckInPromptState()
+        XCTAssertTrue(appModel.checkInPromptState.isPresented)
+    }
 }
 
 private struct FixedPresentationClock: SchedulerClock {
