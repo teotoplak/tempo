@@ -128,7 +128,7 @@ struct AnalyticsView: View {
 
     private var weekNavigator: some View {
         HStack(spacing: 18) {
-            navigationButton(systemImage: "chevron.left") {
+            navigationButton(title: "Previous week", systemImage: "chevron.left") {
                 appModel.showPreviousAnalyticsPeriod()
             }
 
@@ -143,7 +143,11 @@ struct AnalyticsView: View {
             }
             .frame(maxWidth: .infinity)
 
-            navigationButton(systemImage: "chevron.right", isEnabled: appModel.canShowNextAnalyticsPeriod) {
+            navigationButton(
+                title: "Next week",
+                systemImage: "chevron.right",
+                isEnabled: appModel.canShowNextAnalyticsPeriod
+            ) {
                 appModel.showNextAnalyticsPeriod()
             }
         }
@@ -810,19 +814,18 @@ struct AnalyticsView: View {
         return calendar.date(byAdding: .day, value: clampedOffset, to: appModel.analyticsPeriod.startDate) ?? appModel.analyticsPeriod.startDate
     }
 
-    private func navigationButton(systemImage: String, isEnabled: Bool = true, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(isEnabled ? .primary : .secondary)
-                .frame(width: 38, height: 38)
-                .background(
-                    Circle()
-                        .fill(Color.white.opacity(isEnabled ? 0.86 : 0.52))
-                )
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
+    private func navigationButton(title: String, systemImage: String, isEnabled: Bool = true, action: @escaping () -> Void) -> some View {
+        Button(title, systemImage: systemImage, action: action)
+            .labelStyle(.iconOnly)
+            .font(.headline.weight(.semibold))
+            .foregroundStyle(isEnabled ? .primary : .secondary)
+            .frame(width: 38, height: 38)
+            .background(
+                Circle()
+                    .fill(Color.white.opacity(isEnabled ? 0.86 : 0.52))
+            )
+            .buttonStyle(.plain)
+            .disabled(!isEnabled)
     }
 
     private func analyticsCard(title: String, value: String, detail: String) -> some View {

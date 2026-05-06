@@ -113,7 +113,7 @@ struct MenuBarRootView: View {
             }
             .padding(14)
         }
-        .scrollIndicators(.never)
+        .scrollIndicators(.hidden)
         .frame(width: 320)
         .frame(idealHeight: 520, maxHeight: 620)
     }
@@ -271,28 +271,26 @@ struct MenuBarRootView: View {
     private var dailySummarySection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                Button {
+                Button("Previous day", systemImage: "chevron.left") {
                     appModel.showPreviousMenuBarDay()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
                 }
+                .labelStyle(.iconOnly)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
                 .buttonStyle(.plain)
 
                 Text(summaryDateTitle)
                     .font(.system(size: 14, weight: .semibold))
                     .frame(maxWidth: .infinity)
 
-                Button {
+                Button("Next day", systemImage: "chevron.right") {
                     appModel.showNextMenuBarDay()
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
                 }
+                .labelStyle(.iconOnly)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
                 .buttonStyle(.plain)
                 .disabled(!appModel.canShowNextMenuBarDay)
                 .opacity(appModel.canShowNextMenuBarDay ? 1 : 0.35)

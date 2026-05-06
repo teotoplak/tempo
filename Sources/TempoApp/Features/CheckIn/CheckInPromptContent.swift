@@ -93,15 +93,14 @@ struct CheckInPromptContent: View {
 
     private func standardPromptFooter(appModel: TempoAppModel) -> some View {
         HStack(spacing: 10) {
-            Button {
+            Button("Dismiss prompt", systemImage: "xmark") {
                 appModel.dismissCheckInPrompt()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 28, height: 28)
-                    .background(controlBackground, in: Circle())
             }
+            .labelStyle(.iconOnly)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.primary)
+            .frame(width: 28, height: 28)
+            .background(controlBackground, in: Circle())
             .buttonStyle(.plain)
 
             Spacer(minLength: 0)
