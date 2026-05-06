@@ -78,6 +78,16 @@ swift build
 swift test
 ```
 
+## Project Skills
+
+Project-specific skills are shared from `.agents/skills`.
+
+- `.claude/skills` -> `../.agents/skills`
+- `.codex/skills` -> `../.agents/skills`
+- `.gemini/skills` -> `../.agents/skills`
+
+Add new shared project skills in `.agents/skills` so the same skill definition is available through each agent-specific path.
+
 ## Using Tempo
 
 1. Add a few projects in the main window.
