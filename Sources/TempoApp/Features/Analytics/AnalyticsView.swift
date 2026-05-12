@@ -5,6 +5,7 @@ import SwiftUI
 struct AnalyticsView: View {
     @Bindable var appModel: TempoAppModel
     @Environment(\.calendar) private var calendar
+    @Environment(\.colorScheme) private var colorScheme
     @State private var resolvedWindowNumber: Int?
     @State private var hoveredDailyBarSegmentID: String?
     @State private var hoveredDailyBarDayID: Date?
@@ -113,13 +114,13 @@ struct AnalyticsView: View {
                 if let statusMessage = appModel.analyticsExportStatusMessage {
                     Text(statusMessage)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.12, green: 0.50, blue: 0.28))
+                        .foregroundStyle(successTextColor)
                 }
 
                 if let errorMessage = appModel.analyticsExportErrorMessage {
                     Text(errorMessage)
                         .font(.caption)
-                        .foregroundStyle(Color(red: 0.74, green: 0.22, blue: 0.18))
+                        .foregroundStyle(errorTextColor)
                         .multilineTextAlignment(.trailing)
                 }
             }
@@ -154,11 +155,11 @@ struct AnalyticsView: View {
         .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(navigationSurfaceFill)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.06))
+                .strokeBorder(borderColor)
         }
     }
 
@@ -230,7 +231,7 @@ struct AnalyticsView: View {
         .chartPlotStyle { plot in
             plot
                 .frame(maxWidth: .infinity, minHeight: 320)
-                .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .background(insetSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
     }
 
@@ -346,17 +347,17 @@ struct AnalyticsView: View {
 
                 if index != workedProjectSummaries.indices.last {
                     Divider()
-                        .overlay(Color.black.opacity(0.06))
+                        .overlay(separatorColor)
                 }
             }
         }
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.82))
+                .fill(insetSurfaceFill)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.05))
+                .strokeBorder(borderColor)
         }
     }
 
@@ -390,7 +391,7 @@ struct AnalyticsView: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.7))
+                .fill(subtleSurfaceFill)
         )
     }
 
@@ -412,7 +413,7 @@ struct AnalyticsView: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.black.opacity(0.025))
+        .background(tableHeaderFill)
     }
 
     private func allocationTableRow(_ summary: AnalyticsProjectSummary) -> some View {
@@ -633,7 +634,7 @@ struct AnalyticsView: View {
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.white.opacity(0.72))
+                        .fill(subtleSurfaceFill)
                 )
             }
         }
@@ -777,7 +778,7 @@ struct AnalyticsView: View {
     private var dailyBreakdownYAxis: some AxisContent {
         AxisMarks(position: .leading) { value in
             AxisGridLine(stroke: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                .foregroundStyle(Color.black.opacity(0.12))
+                .foregroundStyle(gridLineColor)
             AxisValueLabel {
                 if let hourValue = value.as(Double.self) {
                     Text("\(Int(hourValue.rounded()))h")
@@ -793,7 +794,7 @@ struct AnalyticsView: View {
             AxisGridLine()
                 .foregroundStyle(.clear)
             AxisTick()
-                .foregroundStyle(Color.black.opacity(0.08))
+                .foregroundStyle(axisTickColor)
             AxisValueLabel {
                 if let date = value.as(Date.self),
                    let day = weekDaySummaries.first(where: { calendar.isDate($0.displayDate, inSameDayAs: date) }) {
@@ -822,7 +823,7 @@ struct AnalyticsView: View {
             .frame(width: 38, height: 38)
             .background(
                 Circle()
-                    .fill(Color.white.opacity(isEnabled ? 0.86 : 0.52))
+                    .fill(navigationButtonFill(isEnabled: isEnabled))
             )
             .buttonStyle(.plain)
             .disabled(!isEnabled)
@@ -875,11 +876,7 @@ struct AnalyticsView: View {
 
     private var backgroundGradient: some View {
         LinearGradient(
-            colors: [
-                Color(red: 0.97, green: 0.95, blue: 0.90),
-                Color(red: 0.93, green: 0.96, blue: 0.98),
-                Color(red: 0.95, green: 0.93, blue: 0.97),
-            ],
+            colors: backgroundGradientColors,
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -887,8 +884,88 @@ struct AnalyticsView: View {
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 26, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .shadow(color: Color.black.opacity(0.05), radius: 18, x: 0, y: 10)
+            .fill(cardSurfaceFill)
+            .overlay {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .strokeBorder(borderColor)
+            }
+            .shadow(color: shadowColor, radius: 18, x: 0, y: 10)
+    }
+
+    private var isDarkMode: Bool {
+        colorScheme == .dark
+    }
+
+    private var backgroundGradientColors: [Color] {
+        if isDarkMode {
+            return [
+                Color(red: 0.10, green: 0.11, blue: 0.12),
+                Color(red: 0.07, green: 0.10, blue: 0.12),
+                Color(red: 0.11, green: 0.09, blue: 0.13),
+            ]
+        }
+
+        return [
+            Color(red: 0.97, green: 0.95, blue: 0.90),
+            Color(red: 0.93, green: 0.96, blue: 0.98),
+            Color(red: 0.95, green: 0.93, blue: 0.97),
+        ]
+    }
+
+    private var navigationSurfaceFill: Color {
+        isDarkMode ? Color.white.opacity(0.10) : Color.white.opacity(0.68)
+    }
+
+    private var cardSurfaceFill: Color {
+        isDarkMode ? Color.white.opacity(0.11) : Color.white.opacity(0.72)
+    }
+
+    private var insetSurfaceFill: Color {
+        isDarkMode ? Color.black.opacity(0.22) : Color.white.opacity(0.82)
+    }
+
+    private var subtleSurfaceFill: Color {
+        isDarkMode ? Color.white.opacity(0.08) : Color.white.opacity(0.70)
+    }
+
+    private var tableHeaderFill: Color {
+        isDarkMode ? Color.white.opacity(0.06) : Color.black.opacity(0.025)
+    }
+
+    private var borderColor: Color {
+        isDarkMode ? Color.white.opacity(0.12) : Color.black.opacity(0.06)
+    }
+
+    private var separatorColor: Color {
+        isDarkMode ? Color.white.opacity(0.10) : Color.black.opacity(0.06)
+    }
+
+    private var gridLineColor: Color {
+        isDarkMode ? Color.white.opacity(0.14) : Color.black.opacity(0.12)
+    }
+
+    private var axisTickColor: Color {
+        isDarkMode ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
+    }
+
+    private var shadowColor: Color {
+        isDarkMode ? Color.black.opacity(0.28) : Color.black.opacity(0.05)
+    }
+
+    private var successTextColor: Color {
+        isDarkMode ? Color(red: 0.43, green: 0.82, blue: 0.55) : Color(red: 0.12, green: 0.50, blue: 0.28)
+    }
+
+    private var errorTextColor: Color {
+        isDarkMode ? Color(red: 0.98, green: 0.48, blue: 0.42) : Color(red: 0.74, green: 0.22, blue: 0.18)
+    }
+
+    private func navigationButtonFill(isEnabled: Bool) -> Color {
+        if isDarkMode {
+            return Color.white.opacity(isEnabled ? 0.14 : 0.08)
+        }
+
+        return Color.white.opacity(isEnabled ? 0.86 : 0.52)
     }
 
     private func traceRect(_ rect: CGRect) -> String {
