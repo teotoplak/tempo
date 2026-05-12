@@ -110,6 +110,8 @@ struct MenuBarRootView: View {
                         appModel.quit()
                     }
                 }
+
+                troubleshootingCheckInsSection
             }
             .padding(14)
         }
@@ -319,26 +321,29 @@ struct MenuBarRootView: View {
                 .padding(.top, 4)
             }
 
-            Divider()
-                .padding(.vertical, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(cardBackground)
+    }
 
-            DisclosureGroup(isExpanded: $isShowingTroubleshootingCheckIns) {
-                VStack(alignment: .leading, spacing: 8) {
-                    if appModel.menuBarDayCheckIns.isEmpty {
-                        Text("No check-ins recorded in this day window.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(appModel.menuBarDayCheckIns) { checkIn in
-                            troubleshootingCheckInRow(checkIn)
-                        }
+    private var troubleshootingCheckInsSection: some View {
+        DisclosureGroup(isExpanded: $isShowingTroubleshootingCheckIns) {
+            VStack(alignment: .leading, spacing: 8) {
+                if appModel.menuBarDayCheckIns.isEmpty {
+                    Text("No check-ins recorded in this day window.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(appModel.menuBarDayCheckIns) { checkIn in
+                        troubleshootingCheckInRow(checkIn)
                     }
                 }
-                .padding(.top, 8)
-            } label: {
-                Text("Check-ins (\(appModel.menuBarDayCheckIns.count))")
-                    .font(.system(size: 12, weight: .semibold))
             }
+            .padding(.top, 8)
+        } label: {
+            Text("Check-ins (\(appModel.menuBarDayCheckIns.count))")
+                .font(.system(size: 12, weight: .semibold))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
