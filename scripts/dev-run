@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOG_PATH="${TEMPO_DEV_LOG_PATH:-/tmp/tempo-dev-run.log}"
+PID_PATH="${TEMPO_DEV_PID_PATH:-/tmp/tempo-dev-run.pid}"
+LAUNCH_LABEL="${TEMPO_DEV_LAUNCH_LABEL:-com.tempo.dev-run}"
+
+cd "$ROOT_DIR"
+
+swift build
+
+APP_BIN="$(swift build --show-bin-path)/TempoApp"
+
+launchctl remove "$LAUNCH_LABEL" >/dev/null 2>&1 || true
+existing_pids="$(pgrep -x TempoApp || true)"
+debugserver_pids=""
+
+while read -r pid; do
+  [[ -n "$pid" ]] || continue
+  parent_pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+  if [[ -n "$parent_pid" ]] && ps -p "$parent_pid" -o args= 2>/dev/null | grep -q '/debugserver'; then
+    debugserver_pids="$debugserver_pids $parent_pid"
+  fi
+done <<<"$existing_pids"
+
+if [[ -n "$existing_pids" ]]; then
+  osascript -e 'tell application "TempoApp" to quit' >/dev/null 2>&1 || true
+
+  for _ in {1..25}; do
+    if ! pgrep -x TempoApp >/dev/null; then
+      break
+    fi
+    sleep 0.2
+  done
+
+  existing_pids="$(pgrep -x TempoApp || true)"
+  if [[ -n "$debugserver_pids" ]]; then
+    kill -TERM $debugserver_pids >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$existing_pids" ]]; then
+    kill -TERM $existing_pids >/dev/null 2>&1 || true
+  fi
+
+  for _ in {1..25}; do
+    if ! pgrep -x TempoApp >/dev/null; then
+      break
+    fi
+    sleep 0.2
+  done
+
+  existing_pids="$(pgrep -x TempoApp || true)"
+  if [[ -n "$debugserver_pids" ]]; then
+    kill -KILL $debugserver_pids >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$existing_pids" ]]; then
+    kill -KILL $existing_pids >/dev/null 2>&1 || true
+  fi
+fi
+
+launchctl submit -l "$LAUNCH_LABEL" -o "$LOG_PATH" -e "$LOG_PATH" -- "$APP_BIN"
+sleep 0.5
+
+started_pids="$(pgrep -x TempoApp || true)"
+if [[ -z "$started_pids" ]]; then
+  echo "TempoApp did not stay running. Log: $LOG_PATH" >&2
+  exit 1
+fi
+
+printf '%s\n' "$started_pids" | head -n 1 >"$PID_PATH"
+
+echo "TempoApp started with pid $(cat "$PID_PATH")"
+echo "Log: $LOG_PATH"

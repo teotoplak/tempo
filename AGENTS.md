@@ -7,6 +7,14 @@
 - Prefer small, targeted changes over broad refactors.
 - Validate behavior with `swift test` after code changes when feasible.
 
+## Local Development Run Loop
+
+- Use `scripts/dev-run` to rebuild and relaunch the latest local version of Tempo without opening Xcode.
+- Run `scripts/dev-run` after finishing a code change when the user should manually test the latest behavior, or whenever the running app needs to pick up recently completed changes.
+- `scripts/dev-run` builds with `swift build`, stops the currently running `TempoApp` process if present, and starts `.build/arm64-apple-macosx/debug/TempoApp` through `launchctl`.
+- Do not use this workflow to install Tempo as a persistent `.app` bundle; it is only for local development relaunches.
+- Do not delete or reset `~/Library/Application Support/Tempo` as part of rebuilding or relaunching the app.
+
 ## Troubleshooting Data
 
 - Tempo now writes a rolling runtime trace for lock, wake, timer, scheduler, and check-in prompt window events.
