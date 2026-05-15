@@ -65,6 +65,25 @@ final class CSVExportTests: XCTestCase {
         XCTAssertFalse(csv.contains("05:30"))
     }
 
+    @MainActor
+    func testCSVStringExcludesUntrackedIntervals() throws {
+        let container = TempoModelContainer.inMemory()
+        let context = ModelContext(container)
+        let service = CSVExportService(modelContext: context, calendar: testCalendar)
+        let project = ProjectRecord(name: "Deep Work", sortOrder: 0)
+        context.insert(project)
+        context.insert(projectCheckIn(project: project, at: date(2026, 3, 16, 9, 0, 0)))
+        context.insert(untrackedCheckIn(at: date(2026, 3, 16, 10, 0, 0)))
+        context.insert(untrackedCheckIn(at: date(2026, 3, 16, 11, 0, 0)))
+        try context.save()
+
+        let csv = service.csvString(range: .day, referenceDate: date(2026, 3, 16, 12, 0, 0))
+
+        XCTAssertTrue(csv.contains("2026-03-16,09:00,09:30,30,Deep Work"))
+        XCTAssertFalse(csv.contains("Untracked"))
+        XCTAssertFalse(csv.contains("10:00"))
+    }
+
     private func projectCheckIn(project: ProjectRecord, at date: Date) -> CheckInRecord {
         CheckInRecord(
             timestamp: date,
@@ -80,6 +99,14 @@ final class CSVExportTests: XCTestCase {
             kind: "idle",
             source: "test",
             idleKind: idleKind.rawValue
+        )
+    }
+
+    private func untrackedCheckIn(at date: Date) -> CheckInRecord {
+        CheckInRecord(
+            timestamp: date,
+            kind: "untracked",
+            source: "test"
         )
     }
 

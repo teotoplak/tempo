@@ -69,6 +69,38 @@ final class AnalyticsAggregationTests: XCTestCase {
     }
 
     @MainActor
+    func testDailySummaryExcludesUntrackedIntervalsFromAnalytics() throws {
+        let container = TempoModelContainer.inMemory()
+        let context = ModelContext(container)
+        let store = AnalyticsStore(modelContext: context)
+        let project = ProjectRecord(name: "Deep Work", sortOrder: 0)
+        context.insert(project)
+        context.insert(projectCheckIn(project: project, at: date(2026, 3, 16, 9, 0, 0)))
+        context.insert(untrackedCheckIn(at: date(2026, 3, 16, 10, 0, 0)))
+        context.insert(untrackedCheckIn(at: date(2026, 3, 16, 11, 0, 0)))
+        context.insert(projectCheckIn(project: project, at: date(2026, 3, 16, 12, 0, 0)))
+        try context.save()
+
+        let summary = store.summary(
+            range: .day,
+            referenceDate: date(2026, 3, 16, 12, 0, 0),
+            calendar: testCalendar,
+            dayCutoffHour: 6
+        )
+
+        XCTAssertEqual(summary.totalDuration, 60 * 60, accuracy: 0.001)
+        XCTAssertEqual(summary.projectSummaries.map(\.projectName), ["Deep Work"])
+        XCTAssertEqual(summary.allocatedIntervals.count, 2)
+        XCTAssertTrue(summary.allocatedIntervals.allSatisfy { $0.bucket != .untracked })
+        XCTAssertEqual(summary.checkIns.map(\.kind), [
+            .project(id: project.id, name: "Deep Work"),
+            .untracked,
+            .untracked,
+            .project(id: project.id, name: "Deep Work"),
+        ])
+    }
+
+    @MainActor
     func testWeeklySummaryAnchorsPeriodToConfiguredCutoff() throws {
         let container = TempoModelContainer.inMemory()
         let context = ModelContext(container)
@@ -227,6 +259,14 @@ final class AnalyticsAggregationTests: XCTestCase {
             kind: "idle",
             source: "test",
             idleKind: idleKind.rawValue
+        )
+    }
+
+    private func untrackedCheckIn(at date: Date) -> CheckInRecord {
+        CheckInRecord(
+            timestamp: date,
+            kind: "untracked",
+            source: "test"
         )
     }
 

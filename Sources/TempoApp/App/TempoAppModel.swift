@@ -724,6 +724,24 @@ final class TempoAppModel {
         try selectProjectForPrompt(project)
     }
 
+    func selectUntrackedForPrompt() throws {
+        guard isPromptInteractionActive else {
+            return
+        }
+
+        if shouldTreatPromptSelectionAsFreshCheckIn {
+            try persistFreshUntrackedSelection()
+            return
+        }
+
+        if isIdlePending {
+            try assignPendingIdleToUntracked()
+            return
+        }
+
+        try persistFreshUntrackedSelection()
+    }
+
     func silenceForRestOfDay(trigger: String = "unknown") throws {
         trace("done-for-day-requested", metadata: ["source": trigger])
         persistIdleCheckIn(
@@ -772,6 +790,21 @@ final class TempoAppModel {
 
         let completionDate = max(clock.now, pendingIdleEndedAt)
         persistProjectCheckIn(project, at: completionDate, source: "idle-return")
+        try modelContext.save()
+        refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
+        reloadAnalytics()
+        promptSearchText = ""
+        refreshCheckInPromptState()
+        dismissCheckInPrompt()
+    }
+
+    func assignPendingIdleToUntracked() throws {
+        guard pendingIdleStartedAt != nil, let pendingIdleEndedAt else {
+            throw IdleResolutionError.noPendingIdle
+        }
+
+        let completionDate = max(clock.now, pendingIdleEndedAt)
+        persistUntrackedCheckIn(at: completionDate, source: "idle-return")
         try modelContext.save()
         refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
         reloadAnalytics()
@@ -983,6 +1016,16 @@ final class TempoAppModel {
                 kind: "project",
                 source: source,
                 project: project
+            )
+        )
+    }
+
+    private func persistUntrackedCheckIn(at timestamp: Date, source: String) {
+        modelContext.insert(
+            CheckInRecord(
+                timestamp: timestamp,
+                kind: "untracked",
+                source: source
             )
         )
     }
@@ -1315,6 +1358,8 @@ final class TempoAppModel {
             kind = .project
         case "resume":
             kind = .resume
+        case "untracked":
+            kind = .untracked
         case "idle":
             guard
                 let idleKindRawValue = record.idleKind,
@@ -1661,6 +1706,18 @@ final class TempoAppModel {
     private func persistFreshPromptSelection(for project: ProjectRecord) throws {
         let completionDate = clock.now
         persistProjectCheckIn(project, at: completionDate, source: "check-in")
+        try modelContext.save()
+
+        refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
+        reloadAnalytics()
+        promptSearchText = ""
+        refreshCheckInPromptState()
+        dismissCheckInPrompt()
+    }
+
+    private func persistFreshUntrackedSelection() throws {
+        let completionDate = clock.now
+        persistUntrackedCheckIn(at: completionDate, source: "check-in")
         try modelContext.save()
 
         refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)

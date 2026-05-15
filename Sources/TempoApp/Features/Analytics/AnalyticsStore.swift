@@ -45,7 +45,7 @@ final class AnalyticsStore {
             switch summary.bucket {
             case let .project(id, _):
                 projectID = id
-            case .idle:
+            case .idle, .untracked:
                 projectID = nil
             }
 
@@ -57,7 +57,8 @@ final class AnalyticsStore {
                 entryCount: summary.intervalCount
             )
         }
-        let timelineIntervals = allocationSummary.allocatedIntervals.map { interval in
+        let analyticsIntervals = allocationSummary.allocatedIntervals.filter { $0.bucket.isIncludedInAnalytics }
+        let timelineIntervals = analyticsIntervals.map { interval in
             AnalyticsTimelineInterval(
                 startDate: interval.startDate,
                 endDate: interval.endDate,
@@ -71,7 +72,7 @@ final class AnalyticsStore {
             projectSummaries: projectSummaries,
             firstEntryStartDate: range == .day ? allocationSummary.firstAllocatedIntervalStartDate : nil,
             checkIns: allocationSummary.checkIns,
-            allocatedIntervals: allocationSummary.allocatedIntervals,
+            allocatedIntervals: analyticsIntervals,
             timelineIntervals: range == .day ? timelineIntervals : []
         )
     }
@@ -98,6 +99,13 @@ final class AnalyticsStore {
                 id: record.id,
                 timestamp: record.timestamp,
                 kind: .idle(kind: idleKind),
+                source: record.source
+            )
+        case "untracked":
+            return TimeAllocationCheckIn(
+                id: record.id,
+                timestamp: record.timestamp,
+                kind: .untracked,
                 source: record.source
             )
         default:

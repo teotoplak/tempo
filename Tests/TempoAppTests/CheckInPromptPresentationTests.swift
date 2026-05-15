@@ -75,8 +75,8 @@ final class CheckInPromptPresentationTests: XCTestCase {
             supportingSubtitle: "Idle detected"
         )
 
-        XCTAssertEqual(CheckInPromptWindowController.promptSize(for: state), CGSize(width: 360, height: 320))
-        XCTAssertEqual(CheckInPromptWindowController.promptSize(for: .hidden), CGSize(width: 360, height: 320))
+        XCTAssertEqual(CheckInPromptWindowController.promptSize(for: state), CGSize(width: 420, height: 360))
+        XCTAssertEqual(CheckInPromptWindowController.promptSize(for: .hidden), CGSize(width: 420, height: 360))
     }
 
     @MainActor
@@ -90,9 +90,9 @@ final class CheckInPromptPresentationTests: XCTestCase {
             anchorRect: anchorRect
         )
 
-        XCTAssertEqual(frame.origin.x, 540)
-        XCTAssertEqual(frame.origin.y, 260)
-        XCTAssertEqual(frame.size, CGSize(width: 360, height: 320))
+        XCTAssertEqual(frame.origin.x, 510)
+        XCTAssertEqual(frame.origin.y, 240)
+        XCTAssertEqual(frame.size, CGSize(width: 420, height: 360))
     }
 
     @MainActor

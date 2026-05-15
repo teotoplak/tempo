@@ -408,6 +408,8 @@ struct MenuBarRootView: View {
             return "project · \(name)"
         case let .idle(kind):
             return "idle · \(kind.rawValue)"
+        case .untracked:
+            return "untracked"
         }
     }
 

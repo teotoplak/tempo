@@ -83,6 +83,28 @@ final class CheckInCompletionTests: XCTestCase {
     }
 
     @MainActor
+    func testSelectingUntrackedStoresUntrackedCheckInAndReschedules() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedCompletionClock(now: now)
+        )
+        appModel.accountableElapsedInterval = 25 * 60
+        appModel.isPromptOverdue = true
+        appModel.refreshCheckInPromptState()
+
+        try appModel.selectUntrackedForPrompt()
+
+        let checkIns = try appModel.modelContext.fetch(FetchDescriptor<CheckInRecord>())
+        XCTAssertEqual(checkIns.count, 1)
+        XCTAssertEqual(checkIns[0].kind, "untracked")
+        XCTAssertEqual(checkIns[0].source, "check-in")
+        XCTAssertNil(checkIns[0].project)
+        XCTAssertEqual(appModel.nextCheckInAt, now.addingTimeInterval(25 * 60))
+        XCTAssertFalse(appModel.checkInPromptState.isPresented)
+    }
+
+    @MainActor
     func testSubmitPromptSearchUsesHighlightedExistingProjectBeforeCreateAction() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let appModel = TempoAppModel(

@@ -18,6 +18,7 @@ enum TimeAllocationIdleKind: String, CaseIterable, Codable {
 enum TimeAllocationBucket: Hashable, Equatable, Identifiable {
     case project(id: UUID, name: String)
     case idle
+    case untracked
 
     var id: String {
         switch self {
@@ -25,6 +26,8 @@ enum TimeAllocationBucket: Hashable, Equatable, Identifiable {
             return id.uuidString
         case .idle:
             return "idle"
+        case .untracked:
+            return "untracked"
         }
     }
 
@@ -34,6 +37,17 @@ enum TimeAllocationBucket: Hashable, Equatable, Identifiable {
             return name
         case .idle:
             return "Idle"
+        case .untracked:
+            return "Untracked"
+        }
+    }
+
+    var isIncludedInAnalytics: Bool {
+        switch self {
+        case .project, .idle:
+            return true
+        case .untracked:
+            return false
         }
     }
 }
@@ -41,6 +55,7 @@ enum TimeAllocationBucket: Hashable, Equatable, Identifiable {
 enum TimeAllocationCheckInKind: Equatable {
     case project(id: UUID, name: String)
     case idle(kind: TimeAllocationIdleKind)
+    case untracked
 
     var bucket: TimeAllocationBucket {
         switch self {
@@ -48,6 +63,8 @@ enum TimeAllocationCheckInKind: Equatable {
             return .project(id: id, name: name)
         case .idle:
             return .idle
+        case .untracked:
+            return .untracked
         }
     }
 }
@@ -180,8 +197,10 @@ struct TimeAllocationEngine {
             allocatedIntervals.append(contentsOf: allocateIntervals(in: windowCheckIns))
         }
 
+        let analyticsIntervals = allocatedIntervals.filter { $0.bucket.isIncludedInAnalytics }
+
         var grouped: [TimeAllocationBucket: (duration: TimeInterval, count: Int)] = [:]
-        for interval in allocatedIntervals {
+        for interval in analyticsIntervals {
             let current = grouped[interval.bucket] ?? (duration: 0, count: 0)
             grouped[interval.bucket] = (
                 duration: current.duration + interval.duration,
@@ -189,7 +208,7 @@ struct TimeAllocationEngine {
             )
         }
 
-        let totalDuration = allocatedIntervals.reduce(into: 0.0) { total, interval in
+        let totalDuration = analyticsIntervals.reduce(into: 0.0) { total, interval in
             total += interval.duration
         }
 
@@ -214,7 +233,7 @@ struct TimeAllocationEngine {
             allocatedIntervals: allocatedIntervals,
             bucketSummaries: bucketSummaries,
             totalDuration: totalDuration,
-            firstAllocatedIntervalStartDate: allocatedIntervals.first?.startDate
+            firstAllocatedIntervalStartDate: analyticsIntervals.first?.startDate
         )
     }
 
@@ -263,42 +282,58 @@ struct TimeAllocationEngine {
                         trailingCheckInID: trailingCheckIn.id
                     )
                 )
+            case (.untracked, .untracked):
+                intervals.append(
+                    TimeAllocationInterval(
+                        startDate: leadingCheckIn.timestamp,
+                        endDate: trailingCheckIn.timestamp,
+                        bucket: .untracked,
+                        rule: .sameBucket,
+                        leadingCheckInID: leadingCheckIn.id,
+                        trailingCheckInID: trailingCheckIn.id
+                    )
+                )
             case let (.project(id: leadingID, name: leadingName), .project(id: trailingID, name: trailingName)):
-                let leadingSeconds = totalSeconds / 2
-                let trailingSeconds = totalSeconds - leadingSeconds
-                let splitDate = leadingCheckIn.timestamp.addingTimeInterval(TimeInterval(leadingSeconds))
-
-                if leadingSeconds > 0 {
-                    intervals.append(
-                        TimeAllocationInterval(
-                            startDate: leadingCheckIn.timestamp,
-                            endDate: splitDate,
-                            bucket: .project(id: leadingID, name: leadingName),
-                            rule: .splitBetweenProjects,
-                            leadingCheckInID: leadingCheckIn.id,
-                            trailingCheckInID: trailingCheckIn.id
-                        )
-                    )
-                }
-
-                if trailingSeconds > 0 {
-                    intervals.append(
-                        TimeAllocationInterval(
-                            startDate: splitDate,
-                            endDate: trailingCheckIn.timestamp,
-                            bucket: .project(id: trailingID, name: trailingName),
-                            rule: .splitBetweenProjects,
-                            leadingCheckInID: leadingCheckIn.id,
-                            trailingCheckInID: trailingCheckIn.id
-                        )
-                    )
-                }
+                intervals.append(contentsOf: splitInterval(
+                    from: leadingCheckIn,
+                    to: trailingCheckIn,
+                    totalSeconds: totalSeconds,
+                    leadingBucket: .project(id: leadingID, name: leadingName),
+                    trailingBucket: .project(id: trailingID, name: trailingName)
+                ))
+            case let (.project(id: leadingID, name: leadingName), .untracked):
+                intervals.append(contentsOf: splitInterval(
+                    from: leadingCheckIn,
+                    to: trailingCheckIn,
+                    totalSeconds: totalSeconds,
+                    leadingBucket: .project(id: leadingID, name: leadingName),
+                    trailingBucket: .untracked
+                ))
+            case let (.untracked, .project(id: trailingID, name: trailingName)):
+                intervals.append(contentsOf: splitInterval(
+                    from: leadingCheckIn,
+                    to: trailingCheckIn,
+                    totalSeconds: totalSeconds,
+                    leadingBucket: .untracked,
+                    trailingBucket: .project(id: trailingID, name: trailingName)
+                ))
             case let (.project(id: leadingID, name: leadingName), .idle):
                 intervals.append(
                     TimeAllocationInterval(
                         startDate: leadingCheckIn.timestamp,
                         endDate: trailingCheckIn.timestamp,
                         bucket: .project(id: leadingID, name: leadingName),
+                        rule: .projectBeforeIdle,
+                        leadingCheckInID: leadingCheckIn.id,
+                        trailingCheckInID: trailingCheckIn.id
+                    )
+                )
+            case (.untracked, .idle):
+                intervals.append(
+                    TimeAllocationInterval(
+                        startDate: leadingCheckIn.timestamp,
+                        endDate: trailingCheckIn.timestamp,
+                        bucket: .untracked,
                         rule: .projectBeforeIdle,
                         leadingCheckInID: leadingCheckIn.id,
                         trailingCheckInID: trailingCheckIn.id
@@ -316,6 +351,47 @@ struct TimeAllocationEngine {
                     )
                 )
             }
+        }
+
+        return intervals
+    }
+
+    private func splitInterval(
+        from leadingCheckIn: TimeAllocationCheckIn,
+        to trailingCheckIn: TimeAllocationCheckIn,
+        totalSeconds: Int,
+        leadingBucket: TimeAllocationBucket,
+        trailingBucket: TimeAllocationBucket
+    ) -> [TimeAllocationInterval] {
+        let leadingSeconds = totalSeconds / 2
+        let trailingSeconds = totalSeconds - leadingSeconds
+        let splitDate = leadingCheckIn.timestamp.addingTimeInterval(TimeInterval(leadingSeconds))
+        var intervals: [TimeAllocationInterval] = []
+
+        if leadingSeconds > 0 {
+            intervals.append(
+                TimeAllocationInterval(
+                    startDate: leadingCheckIn.timestamp,
+                    endDate: splitDate,
+                    bucket: leadingBucket,
+                    rule: .splitBetweenProjects,
+                    leadingCheckInID: leadingCheckIn.id,
+                    trailingCheckInID: trailingCheckIn.id
+                )
+            )
+        }
+
+        if trailingSeconds > 0 {
+            intervals.append(
+                TimeAllocationInterval(
+                    startDate: splitDate,
+                    endDate: trailingCheckIn.timestamp,
+                    bucket: trailingBucket,
+                    rule: .splitBetweenProjects,
+                    leadingCheckInID: leadingCheckIn.id,
+                    trailingCheckInID: trailingCheckIn.id
+                )
+            )
         }
 
         return intervals

@@ -28,6 +28,7 @@ struct CheckInTriggerLatestCheckIn: Equatable {
     enum Kind: Equatable {
         case project
         case resume
+        case untracked
         case idle(TimeAllocationIdleKind)
     }
 
@@ -281,7 +282,7 @@ struct CheckInTriggerEngine {
         }
 
         switch latestCheckIn.kind {
-        case .project, .resume:
+        case .project, .resume, .untracked:
             let nextCheckInAt = latestCheckIn.timestamp.addingTimeInterval(pollingInterval)
             let isPromptOverdue = eventDate >= nextCheckInAt
             let accountableElapsedInterval = isPromptOverdue

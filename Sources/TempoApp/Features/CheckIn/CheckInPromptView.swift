@@ -7,8 +7,8 @@ struct CheckInPromptView: View {
     var body: some View {
         CheckInPromptContent(appModel: appModel, state: state)
             .frame(
-                minWidth: 336,
-                minHeight: 284
+                minWidth: 396,
+                minHeight: 324
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(12)

@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 final class CheckInPromptWindowController {
-    private static let standardPromptSize = CGSize(width: 360, height: 320)
+    private static let standardPromptSize = CGSize(width: 420, height: 360)
     private static let idleResolutionPromptSize = CGSize(width: 392, height: 420)
 
     private(set) var backdropWindow: NSWindow?

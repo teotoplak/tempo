@@ -106,6 +106,24 @@ struct CheckInPromptContent: View {
             Spacer(minLength: 0)
 
             Button {
+                try? appModel.selectUntrackedForPrompt()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: 11, weight: .semibold))
+
+                    Text("Untracked")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(controlBackground, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("Do not count this time in analytics.")
+
+            Button {
                 try? appModel.silenceForRestOfDay(trigger: "prompt")
             } label: {
                 HStack(spacing: 6) {

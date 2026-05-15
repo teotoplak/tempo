@@ -208,6 +208,28 @@ final class TimeAllocationEngineTests: XCTestCase {
         XCTAssertEqual(summary.bucketSummaries[0].bucket, .idle)
     }
 
+    func testUntrackedIntervalsAreDerivedButExcludedFromAnalyticsTotals() {
+        let summary = engine.summary(
+            checkIns: [
+                projectCheckIn("Project A", id: projectID(1), at: date(2026, 3, 16, 9, 0, 0)),
+                untrackedCheckIn(at: date(2026, 3, 16, 9, 30, 0)),
+                untrackedCheckIn(at: date(2026, 3, 16, 10, 0, 0)),
+            ],
+            range: .day,
+            referenceDate: date(2026, 3, 16, 12, 0, 0),
+            calendar: testCalendar,
+            dayCutoffHour: 6
+        )
+
+        XCTAssertEqual(summary.allocatedIntervals.map(\.bucket), [
+            .project(id: projectID(1), name: "Project A"),
+            .untracked,
+            .untracked,
+        ])
+        XCTAssertEqual(summary.totalDuration, 15 * 60)
+        XCTAssertEqual(summary.bucketSummaries.map(\.bucket), [.project(id: projectID(1), name: "Project A")])
+    }
+
     private func projectCheckIn(_ name: String, id: UUID, at date: Date) -> TimeAllocationCheckIn {
         TimeAllocationCheckIn(
             id: UUID(),
@@ -222,6 +244,15 @@ final class TimeAllocationEngineTests: XCTestCase {
             id: UUID(),
             timestamp: date,
             kind: .idle(kind: idleKind),
+            source: "test"
+        )
+    }
+
+    private func untrackedCheckIn(at date: Date) -> TimeAllocationCheckIn {
+        TimeAllocationCheckIn(
+            id: UUID(),
+            timestamp: date,
+            kind: .untracked,
             source: "test"
         )
     }
