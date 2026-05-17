@@ -77,6 +77,57 @@ final class PersistenceModelTests: XCTestCase {
     }
 
     @MainActor
+    func testMenuBarCurrentActivityUsesLatestProjectCheckIn() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedPersistenceClock(now: now)
+        )
+        let project = ProjectRecord(name: "Client Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        appModel.modelContext.insert(projectCheckIn(project: project, at: now.addingTimeInterval(-(16 * 60))))
+        try appModel.modelContext.save()
+        appModel.nextCheckInAt = now.addingTimeInterval(9 * 60)
+
+        XCTAssertEqual(appModel.menuBarCurrentActivityPrimaryStatus(), "Client Work")
+        XCTAssertTrue(appModel.menuBarCurrentActivitySecondaryStatus(at: now).contains("Checked in at"))
+        XCTAssertTrue(appModel.menuBarCurrentActivitySecondaryStatus(at: now).contains("next in 9m"))
+    }
+
+    @MainActor
+    func testMenuBarCurrentActivityUsesLatestIdleCheckIn() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedPersistenceClock(now: now)
+        )
+        appModel.modelContext.insert(
+            CheckInRecord(
+                timestamp: now.addingTimeInterval(-(30 * 60)),
+                kind: "idle",
+                source: "test",
+                idleKind: TimeAllocationIdleKind.doneForDay.rawValue
+            )
+        )
+        try appModel.modelContext.save()
+
+        XCTAssertEqual(appModel.menuBarCurrentActivityPrimaryStatus(), "Done for day")
+        XCTAssertTrue(appModel.menuBarCurrentActivitySecondaryStatus(at: now).contains("Checked in at"))
+    }
+
+    @MainActor
+    func testMenuBarCurrentActivityHandlesNoCheckIn() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedPersistenceClock(now: now)
+        )
+
+        XCTAssertEqual(appModel.menuBarCurrentActivityPrimaryStatus(), "No check-in yet")
+        XCTAssertEqual(appModel.menuBarCurrentActivitySecondaryStatus(at: now), "Check in to start tracking.")
+    }
+
+    @MainActor
     func testSaveSettingsReschedulesNextCheckInWhenPollingIntervalChanges() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let appModel = TempoAppModel(

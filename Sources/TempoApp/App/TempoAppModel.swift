@@ -478,6 +478,45 @@ final class TempoAppModel {
         return "Scheduled for \(Self.formattedClockTime(nextCheckInAt))"
     }
 
+    func menuBarCurrentActivityPrimaryStatus() -> String {
+        guard let latestCheckIn = latestCheckInRecord() else {
+            return "No check-in yet"
+        }
+
+        switch latestCheckIn.kind {
+        case "project":
+            return latestCheckIn.project?.name ?? "Unknown project"
+        case "idle":
+            return menuBarIdleActivityTitle(for: latestCheckIn)
+        case "untracked":
+            return "Untracked"
+        default:
+            return "Unknown check-in"
+        }
+    }
+
+    func menuBarCurrentActivitySecondaryStatus(at date: Date) -> String {
+        guard let latestCheckIn = latestCheckInRecord() else {
+            return "Check in to start tracking."
+        }
+
+        let checkedInText = "Checked in at \(Self.formattedClockTime(latestCheckIn.timestamp))"
+        if isSilenced, let silenceEndsAt {
+            return "\(checkedInText) · \(silenceSecondaryStatus(at: date, silenceEndsAt: silenceEndsAt))"
+        }
+
+        if isPromptOverdue {
+            return "\(checkedInText) · check-in overdue"
+        }
+
+        guard let nextCheckInAt else {
+            return checkedInText
+        }
+
+        let remaining = max(nextCheckInAt.timeIntervalSince(date), 0)
+        return "\(checkedInText) · next in \(Self.formattedCompactDuration(remaining))"
+    }
+
     var pendingIdleStatusText: String {
         Self.idleSupportingSubtitle(duration: pendingIdleDuration, reason: pendingIdleReasonLabel)
     }
@@ -1923,6 +1962,22 @@ final class TempoAppModel {
         }
 
         return Self.formattedMonthDay(silenceEndsAt)
+    }
+
+    private func menuBarIdleActivityTitle(for checkIn: CheckInRecord) -> String {
+        guard
+            let idleKindRawValue = checkIn.idleKind,
+            let idleKind = TimeAllocationIdleKind(persistedValue: idleKindRawValue)
+        else {
+            return "Idle"
+        }
+
+        switch idleKind {
+        case .doneForDay:
+            return "Done for day"
+        case .automaticThreshold, .unansweredPrompt:
+            return "Idle"
+        }
     }
 
     nonisolated static func formattedElapsedText(for elapsedDuration: TimeInterval) -> String {

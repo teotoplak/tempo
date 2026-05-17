@@ -45,15 +45,11 @@ struct MenuBarRootView: View {
                         }
 
                         statusCard(
-                            title: appModel.isSilenced ? "Silence status" : "Next check-in",
-                            primary: appModel.menuBarPrimaryStatus(at: context.date),
-                            secondary: appModel.menuBarSecondaryStatus(at: context.date),
-                            accent: appModel.isSilenced
-                                ? Color(red: 0.32, green: 0.39, blue: 0.64)
-                                : Color(red: 0.10, green: 0.47, blue: 0.67),
-                            icon: appModel.isSilenced
-                                ? "moon.stars.fill"
-                                : "clock.arrow.trianglehead.counterclockwise.rotate.90"
+                            title: "Current check-in",
+                            primary: appModel.menuBarCurrentActivityPrimaryStatus(),
+                            secondary: appModel.menuBarCurrentActivitySecondaryStatus(at: context.date),
+                            accent: Color(red: 0.10, green: 0.47, blue: 0.67),
+                            icon: "checkmark.circle.fill"
                         )
                     }
                 }
