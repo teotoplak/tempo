@@ -113,7 +113,7 @@ struct MenuBarRootView: View {
         }
         .scrollIndicators(.hidden)
         .frame(width: 320)
-        .frame(idealHeight: 520, maxHeight: 620)
+        .frame(idealHeight: 440, maxHeight: 560)
     }
 
     private var header: some View {
@@ -301,13 +301,7 @@ struct MenuBarRootView: View {
                 .padding(.bottom, 4)
 
             if appModel.menuBarDayProjectSummaries.isEmpty {
-                ContentUnavailableView {
-                    Label(noTrackedTimeTitle, systemImage: "clock.badge.questionmark")
-                } description: {
-                    Text(noTrackedTimeDescription)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                noTrackedTimeEmptyState
             } else {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(appModel.menuBarDayProjectSummaries, id: \.id) { summary in
@@ -321,6 +315,34 @@ struct MenuBarRootView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(cardBackground)
+    }
+
+    private var noTrackedTimeEmptyState: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "clock.badge.questionmark")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.secondary.opacity(0.12))
+                )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(noTrackedTimeTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                Text(noTrackedTimeDescription)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
     }
 
     private var troubleshootingCheckInsSection: some View {
