@@ -144,6 +144,9 @@ final class TempoAppModel {
     var diagnosticsStatusMessage: String?
     var launchAtLoginEnabled = false
     var launchAtLoginErrorMessage: String?
+    var checkInHotKey: CheckInHotKey?
+    var isRecordingCheckInHotKey = false
+    var checkInHotKeyStatusMessage: String?
     private var lastSavedPollingIntervalMinutes = 25
     private var isMenuBarWindowVisible = false
     private var promptPresentedAt: Date?
@@ -156,10 +159,13 @@ final class TempoAppModel {
     private let csvExportService: CSVExportService
     private let diagnosticsRecorder: TempoDiagnosticsRecorder
     private let launchAtLoginController: any LaunchAtLoginControlling
+    private let checkInHotKeyStore: any CheckInHotKeyStoring
+    private let checkInHotKeyRegistrar: any CheckInHotKeyRegistering
     private var hasHandledInitialLaunch = false
     private var analyticsReferenceDate: Date
     private var menuBarDayReferenceDate: Date
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var checkInHotKeyRecorderMonitor: Any?
     private var checkInPromptWindowController: CheckInPromptWindowController?
     private weak var analyticsWindow: NSWindow?
     private var priorAnalyticsActivationPolicy: NSApplication.ActivationPolicy?
@@ -171,7 +177,9 @@ final class TempoAppModel {
         clock: any SchedulerClock = SystemSchedulerClock(),
         calendar: Calendar = .current,
         diagnosticsRecorder: TempoDiagnosticsRecorder = TempoDiagnosticsRecorder.makeDefault(),
-        launchAtLoginController: any LaunchAtLoginControlling = SMAppServiceLaunchAtLoginController()
+        launchAtLoginController: any LaunchAtLoginControlling = SMAppServiceLaunchAtLoginController(),
+        checkInHotKeyStore: any CheckInHotKeyStoring = UserDefaultsCheckInHotKeyStore(),
+        checkInHotKeyRegistrar: any CheckInHotKeyRegistering = CarbonCheckInHotKeyRegistrar()
     ) {
         let resolvedContainer = modelContainer ?? TempoModelContainer.live()
         self.modelContainer = resolvedContainer
@@ -220,11 +228,15 @@ final class TempoAppModel {
         self.analyticsStore = AnalyticsStore(modelContext: self.modelContext)
         self.csvExportService = CSVExportService(modelContext: self.modelContext, calendar: calendar)
         self.launchAtLoginEnabled = launchAtLoginController.isEnabled
+        self.checkInHotKeyStore = checkInHotKeyStore
+        self.checkInHotKeyRegistrar = checkInHotKeyRegistrar
+        self.checkInHotKey = checkInHotKeyStore.load()
         self.lastSavedPollingIntervalMinutes = self.settings.pollingIntervalMinutes
 
         refreshRuntimeState(eventDate: clock.now)
         reloadAnalytics()
         refreshCheckInPromptState()
+        applyCheckInHotKeyRegistration()
         trace("model-initialized", metadata: ["diagnosticsLogPath": diagnosticsLogPath])
     }
 
@@ -421,6 +433,46 @@ final class TempoAppModel {
             ? "Revealed diagnostics log in Finder."
             : "Diagnostics log is unavailable in this runtime."
         trace("reveal-diagnostics-log", metadata: ["didReveal": "\(didReveal)"])
+    }
+
+    var checkInHotKeyDisplayText: String {
+        checkInHotKey?.displayString ?? "Not set"
+    }
+
+    func beginRecordingCheckInHotKey() {
+        stopRecordingCheckInHotKey()
+        isRecordingCheckInHotKey = true
+        checkInHotKeyStatusMessage = "Press a shortcut using Command, Option, or Control."
+        trace("check-in-hotkey-recording-started")
+
+        checkInHotKeyRecorderMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            Task { @MainActor in
+                self?.finishRecordingCheckInHotKey(with: event)
+            }
+            return nil
+        }
+    }
+
+    func cancelRecordingCheckInHotKey() {
+        stopRecordingCheckInHotKey()
+        checkInHotKeyStatusMessage = nil
+        trace("check-in-hotkey-recording-cancelled")
+    }
+
+    func setCheckInHotKey(_ hotKey: CheckInHotKey) {
+        stopRecordingCheckInHotKey()
+        checkInHotKey = hotKey
+        checkInHotKeyStore.save(hotKey)
+        applyCheckInHotKeyRegistration()
+    }
+
+    func clearCheckInHotKey() {
+        stopRecordingCheckInHotKey()
+        checkInHotKey = nil
+        checkInHotKeyStore.save(nil)
+        applyCheckInHotKeyRegistration()
+        checkInHotKeyStatusMessage = "Shortcut cleared."
+        trace("check-in-hotkey-cleared")
     }
 
     var currentProjectContextLabel: String {
@@ -996,6 +1048,61 @@ final class TempoAppModel {
                 metadata: ["error": error.localizedDescription]
             )
         }
+    }
+
+    private func finishRecordingCheckInHotKey(with event: NSEvent) {
+        if event.keyCode == 53 {
+            cancelRecordingCheckInHotKey()
+            return
+        }
+
+        guard let hotKey = CheckInHotKey(event: event) else {
+            stopRecordingCheckInHotKey()
+            checkInHotKeyStatusMessage = "Shortcut must include Command, Option, or Control."
+            trace("check-in-hotkey-recording-rejected")
+            return
+        }
+
+        setCheckInHotKey(hotKey)
+    }
+
+    private func stopRecordingCheckInHotKey() {
+        if let checkInHotKeyRecorderMonitor {
+            NSEvent.removeMonitor(checkInHotKeyRecorderMonitor)
+            self.checkInHotKeyRecorderMonitor = nil
+        }
+        isRecordingCheckInHotKey = false
+    }
+
+    private func applyCheckInHotKeyRegistration() {
+        do {
+            try checkInHotKeyRegistrar.register(checkInHotKey) { [weak self] in
+                self?.handleCheckInHotKeyPressed()
+            }
+
+            if let checkInHotKey {
+                checkInHotKeyStatusMessage = "Shortcut set to \(checkInHotKey.displayString)."
+                trace(
+                    "check-in-hotkey-registered",
+                    metadata: [
+                        "keyCode": "\(checkInHotKey.keyCode)",
+                        "modifierFlags": "\(checkInHotKey.modifierFlags)"
+                    ]
+                )
+            } else {
+                checkInHotKeyStatusMessage = nil
+                trace("check-in-hotkey-unregistered")
+            }
+        } catch {
+            checkInHotKeyStatusMessage = error.localizedDescription
+            trace("check-in-hotkey-registration-failed", metadata: ["error": error.localizedDescription])
+        }
+    }
+
+    private func handleCheckInHotKeyPressed() {
+        trace("check-in-hotkey-pressed")
+        checkInNow(trigger: "hotkey")
+        presentCheckInPromptIfNeeded()
     }
 
     private func nextProjectSortOrder() -> Int {

@@ -47,6 +47,45 @@ struct SettingsPopoverView: View {
                 }
             }
 
+            Section("Keyboard Shortcut") {
+                HStack(spacing: 10) {
+                    Text(appModel.checkInHotKeyDisplayText)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                        )
+
+                    if appModel.isRecordingCheckInHotKey {
+                        Button("Cancel") {
+                            appModel.cancelRecordingCheckInHotKey()
+                        }
+                    } else {
+                        Button("Record") {
+                            appModel.beginRecordingCheckInHotKey()
+                        }
+                    }
+
+                    Button("Clear") {
+                        appModel.clearCheckInHotKey()
+                    }
+                    .disabled(appModel.checkInHotKey == nil && !appModel.isRecordingCheckInHotKey)
+                }
+
+                Text(checkInHotKeyHelpText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let hotKeyStatusMessage = appModel.checkInHotKeyStatusMessage {
+                    Text(hotKeyStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Diagnostics") {
                 Button("Reveal Trace Log in Finder") {
                     appModel.revealDiagnosticsLogInFinder()
@@ -76,5 +115,13 @@ struct SettingsPopoverView: View {
 
     private func persistSettings() {
         try? appModel.saveSettings()
+    }
+
+    private var checkInHotKeyHelpText: String {
+        if appModel.isRecordingCheckInHotKey {
+            return "Press the shortcut you want to use for Check In Now."
+        }
+
+        return "This shortcut works globally while Tempo is running."
     }
 }
