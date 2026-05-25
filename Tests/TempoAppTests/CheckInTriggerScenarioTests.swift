@@ -119,6 +119,33 @@ final class CheckInTriggerScenarioTests: XCTestCase {
         XCTAssertTrue(scenario.outcome.state.isPromptOverdue)
     }
 
+    func test_doneForDayNextMorningPromptThatGoesUnanswered_marksUnansweredPromptIdle() {
+        let scenario = CheckInTriggerScenario()
+            .givenDoneForDay(at: time(18, 0))
+            .whenAppRelaunches(at: time(9, 0, dayOffset: 1))
+            .whenTimerElapses(at: time(9, 5, dayOffset: 1))
+
+        XCTAssertTrue(scenario.outcome.showsPrompt)
+        XCTAssertEqual(
+            scenario.outcome.prompt,
+            .unansweredPrompt(startedAt: time(9, 5, dayOffset: 1))
+        )
+        XCTAssertTrue(scenario.outcome.state.isIdlePending)
+        XCTAssertNil(scenario.outcome.state.nextCheckInAt)
+        XCTAssertFalse(scenario.outcome.state.isPromptOverdue)
+        XCTAssertEqual(scenario.outcome.state.pendingIdleReason, "unanswered-prompt")
+        XCTAssertEqual(
+            scenario.outcome.effects,
+            [
+                .persistIdleCheckIn(
+                    at: time(9, 5, dayOffset: 1),
+                    idleKind: .unansweredPrompt,
+                    source: "unanswered-prompt"
+                )
+            ]
+        )
+    }
+
     func test_overduePromptThatGoesUnanswered_marksUnansweredPromptIdle() {
         let scenario = CheckInTriggerScenario()
             .givenProjectCheckIn(at: time(1, 0))

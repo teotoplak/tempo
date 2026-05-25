@@ -187,7 +187,7 @@ struct CheckInTriggerEngine {
         if
             let promptIdleMarkAt = promptIdleMarkAt(for: context),
             eventDate >= promptIdleMarkAt,
-            context.latestCheckIn?.isIdle != true
+            context.latestCheckIn?.blocksUnansweredPromptIdle != true
         {
             let idleStartedAt = calculatedIdleStartDate(
                 activityDate: activityDate,
@@ -454,7 +454,11 @@ struct CheckInTriggerEngine {
 }
 
 private extension CheckInTriggerLatestCheckIn {
-    var isIdle: Bool {
+    var blocksUnansweredPromptIdle: Bool {
+        if case .idle(.doneForDay) = kind {
+            return false
+        }
+
         if case .idle = kind {
             return true
         }
