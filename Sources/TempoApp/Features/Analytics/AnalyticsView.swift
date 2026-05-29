@@ -1075,17 +1075,20 @@ struct AnalyticsView: View {
     }
 
     private func navigationButton(title: String, systemImage: String, isEnabled: Bool = true, action: @escaping () -> Void) -> some View {
-        Button(title, systemImage: systemImage, action: action)
-            .labelStyle(.iconOnly)
-            .font(.headline.weight(.semibold))
-            .foregroundStyle(isEnabled ? .primary : .secondary)
-            .frame(width: 38, height: 38)
-            .background(
-                Circle()
-                    .fill(navigationButtonFill(isEnabled: isEnabled))
-            )
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(isEnabled ? .primary : .secondary)
+                .frame(width: 38, height: 38)
+                .contentShape(Circle())
+                .background(
+                    Circle()
+                        .fill(navigationButtonFill(isEnabled: isEnabled))
+                )
+        }
             .buttonStyle(.plain)
             .disabled(!isEnabled)
+            .accessibilityLabel(Text(title))
     }
 
     private func analyticsCard(title: String, value: String, detail: String) -> some View {
