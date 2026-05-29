@@ -9,6 +9,7 @@ struct AnalyticsView: View {
     @State private var resolvedWindowNumber: Int?
     @State private var hoveredDailyBarSegmentID: String?
     @State private var hoveredDailyBarDayID: Date?
+    @State private var hoveredTimelineSegmentID: String?
     @State private var hoveredPieProjectID: String?
 
     private let percentStyle = FloatingPointFormatStyle<Double>.Percent.percent.precision(.fractionLength(0))
@@ -40,6 +41,7 @@ struct AnalyticsView: View {
                 summaryCards
                 allocationSection
                 weeklyVisualsSection
+                chronologicalDailyBreakdownCard
             }
             .padding(28)
         }
@@ -283,6 +285,54 @@ struct AnalyticsView: View {
         .background(cardBackground)
     }
 
+    private var chronologicalDailyBreakdownCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            cardHeader(
+                title: "Daily timeline",
+                subtitle: "Chronological check-in intervals for each day in the week"
+            )
+
+            hoverSummaryBanner(
+                info: chronologicalBreakdownHoverInfo,
+                placeholder: "Hover a timeline segment to inspect the check-in interval."
+            )
+
+            if chronologicalTimelineSegments.isEmpty {
+                ContentUnavailableView(
+                    "No check-in intervals this week",
+                    systemImage: "chart.bar.doc.horizontal",
+                    description: Text("Tempo needs at least two check-ins in a day to draw a chronological interval.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 280)
+            } else {
+                chronologicalTimelineChart
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(22)
+        .background(cardBackground)
+    }
+
+    private var chronologicalTimelineChart: some View {
+        Chart {
+            ForEach(chronologicalTimelineSegments) { segment in
+                chronologicalTimelineMark(segment)
+            }
+        }
+        .chartXAxis { chronologicalTimelineXAxis }
+        .chartYAxis { chronologicalTimelineYAxis }
+        .chartXScale(domain: chronologicalTimelineXDomain)
+        .chartYScale(domain: chronologicalTimelineYDomain)
+        .chartOverlay { proxy in
+            chronologicalTimelineHoverOverlay(proxy: proxy)
+        }
+        .chartPlotStyle { plot in
+            plot
+                .frame(maxWidth: .infinity, minHeight: chronologicalTimelineChartHeight)
+                .background(insetSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+    }
+
     private var weeklyShareChart: some View {
         Chart(workedProjectSummaries, id: \.id) { summary in
             SectorMark(
@@ -510,6 +560,14 @@ struct AnalyticsView: View {
         return workedProjectSummaries.first(where: { $0.id == hoveredPieProjectID })
     }
 
+    private var hoveredTimelineSegment: AnalyticsChronologicalSegment? {
+        guard let hoveredTimelineSegmentID else {
+            return nil
+        }
+
+        return chronologicalTimelineSegments.first(where: { $0.id == hoveredTimelineSegmentID })
+    }
+
     private var dailyBreakdownHoverInfo: AnalyticsHoverInfo? {
         guard let segment = hoveredDailyBarSegment, let day = hoveredDailyBarDay else {
             return nil
@@ -531,6 +589,18 @@ struct AnalyticsView: View {
             title: summary.projectName,
             subtitle: "\(TempoAppModel.formattedTrackedDuration(summary.totalDuration)) · \(summary.percentageOfTotal.formatted(percentStyle)) of week",
             color: color(for: summary.projectID, name: summary.projectName)
+        )
+    }
+
+    private var chronologicalBreakdownHoverInfo: AnalyticsHoverInfo? {
+        guard let segment = hoveredTimelineSegment else {
+            return nil
+        }
+
+        return AnalyticsHoverInfo(
+            title: segment.bucketName,
+            subtitle: "\(segment.weekdayLabel) \(segment.dateLabel) · \(TempoAppModel.formattedClockTime(segment.startDate))-\(TempoAppModel.formattedClockTime(segment.endDate)) · \(TempoAppModel.formattedTrackedDuration(segment.duration))",
+            color: timelineColor(for: segment)
         )
     }
 
@@ -612,6 +682,91 @@ struct AnalyticsView: View {
         return dates
     }
 
+    private var chronologicalTimelineRows: [AnalyticsTimelineDayRow] {
+        let dates = weekStartDates
+
+        return dates.enumerated().map { index, dayStart in
+            let displayDate = calendar.date(byAdding: .hour, value: -appModel.settings.analyticsDayCutoffHour, to: dayStart) ?? dayStart
+
+            return AnalyticsTimelineDayRow(
+                dayStartDate: dayStart,
+                displayDate: displayDate,
+                weekdayLabel: displayDate.formatted(.dateTime.weekday(.abbreviated)),
+                dateLabel: displayDate.formatted(.dateTime.day()),
+                rowIndex: dates.count - 1 - index
+            )
+        }
+    }
+
+    private var chronologicalTimelineSegments: [AnalyticsChronologicalSegment] {
+        let rowsByStartDate = Dictionary(uniqueKeysWithValues: chronologicalTimelineRows.map { ($0.dayStartDate, $0) })
+
+        return appModel.analyticsAllocatedIntervals.compactMap { interval in
+            let dayStart = dayStartDate(containing: interval.startDate)
+            guard let row = rowsByStartDate[dayStart] else {
+                return nil
+            }
+
+            let normalizedStartDate = normalizedTimelineDate(for: interval.startDate, in: dayStart)
+            let normalizedEndDate = normalizedTimelineDate(for: interval.endDate, in: dayStart)
+            let projectID: UUID?
+            let bucketName: String
+            let isIdle: Bool
+
+            switch interval.bucket {
+            case let .project(id, name):
+                projectID = id
+                bucketName = name
+                isIdle = false
+            case .idle:
+                projectID = nil
+                bucketName = TimeAllocationBucket.idle.displayName
+                isIdle = true
+            case .untracked:
+                projectID = nil
+                bucketName = TimeAllocationBucket.untracked.displayName
+                isIdle = false
+            }
+
+            return AnalyticsChronologicalSegment(
+                id: interval.id,
+                startDate: interval.startDate,
+                endDate: interval.endDate,
+                normalizedStartDate: normalizedStartDate,
+                normalizedEndDate: normalizedEndDate,
+                rowIndex: row.rowIndex,
+                weekdayLabel: row.weekdayLabel,
+                dateLabel: row.dateLabel,
+                projectID: projectID,
+                bucketName: bucketName,
+                duration: interval.duration,
+                isIdle: isIdle
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.startDate != rhs.startDate {
+                return lhs.startDate < rhs.startDate
+            }
+
+            return lhs.bucketName.localizedCaseInsensitiveCompare(rhs.bucketName) == .orderedAscending
+        }
+    }
+
+    private var chronologicalTimelineXDomain: ClosedRange<Date> {
+        let startDate = appModel.analyticsPeriod.startDate
+        let endDate = calendar.date(byAdding: .day, value: 1, to: startDate) ?? startDate.addingTimeInterval(24 * 60 * 60)
+        return startDate...endDate
+    }
+
+    private var chronologicalTimelineYDomain: ClosedRange<Double> {
+        let maxIndex = max(Double(chronologicalTimelineRows.count - 1), 0)
+        return -0.5...(maxIndex + 0.5)
+    }
+
+    private var chronologicalTimelineChartHeight: CGFloat {
+        max(CGFloat(chronologicalTimelineRows.count) * 42, 280)
+    }
+
     private var maxWorkedDayHours: Double {
         let rawHours = weekDaySummaries
             .map { $0.workedDuration / 3_600 }
@@ -650,6 +805,19 @@ struct AnalyticsView: View {
         .foregroundStyle(color(for: segment.projectID, name: segment.projectName))
         .opacity(hoveredDailyBarSegmentID == nil || hoveredDailyBarSegmentID == segment.id ? 1 : 0.35)
         .cornerRadius(8)
+    }
+
+    @ChartContentBuilder
+    private func chronologicalTimelineMark(_ segment: AnalyticsChronologicalSegment) -> some ChartContent {
+        RectangleMark(
+            xStart: .value("Start", segment.normalizedStartDate),
+            xEnd: .value("End", segment.normalizedEndDate),
+            yStart: .value("Day", Double(segment.rowIndex) - 0.32),
+            yEnd: .value("Day", Double(segment.rowIndex) + 0.32)
+        )
+        .foregroundStyle(timelineColor(for: segment))
+        .opacity(hoveredTimelineSegmentID == nil || hoveredTimelineSegmentID == segment.id ? 1 : 0.35)
+        .cornerRadius(6)
     }
 
     private func dailyBreakdownHoverOverlay(proxy: ChartProxy) -> some View {
@@ -720,6 +888,46 @@ struct AnalyticsView: View {
         }
     }
 
+    private func chronologicalTimelineHoverOverlay(proxy: ChartProxy) -> some View {
+        GeometryReader { geometry in
+            Color.clear
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    guard let plotFrame = proxy.plotFrame else {
+                        hoveredTimelineSegmentID = nil
+                        return
+                    }
+
+                    let frame = geometry[plotFrame]
+
+                    switch phase {
+                    case let .active(location):
+                        guard frame.contains(location) else {
+                            hoveredTimelineSegmentID = nil
+                            return
+                        }
+
+                        let plotX = location.x - frame.origin.x
+                        let plotY = location.y - frame.origin.y
+                        guard
+                            let hoveredDate = proxy.value(atX: plotX, as: Date.self),
+                            let hoveredRowIndex = proxy.value(atY: plotY, as: Double.self)
+                        else {
+                            hoveredTimelineSegmentID = nil
+                            return
+                        }
+
+                        hoveredTimelineSegmentID = chronologicalTimelineSegment(
+                            at: hoveredDate,
+                            rowIndex: hoveredRowIndex
+                        )?.id
+                    case .ended:
+                        hoveredTimelineSegmentID = nil
+                    }
+                }
+        }
+    }
+
     private func dailyBreakdownSegment(
         for day: AnalyticsWeekDaySummary,
         hoveredHours: Double
@@ -770,6 +978,19 @@ struct AnalyticsView: View {
         return workedProjectSummaries.last?.id
     }
 
+    private func chronologicalTimelineSegment(at hoveredDate: Date, rowIndex: Double) -> AnalyticsChronologicalSegment? {
+        let roundedRowIndex = Int(rowIndex.rounded())
+        guard abs(rowIndex - Double(roundedRowIndex)) <= 0.5 else {
+            return nil
+        }
+
+        return chronologicalTimelineSegments.first { segment in
+            segment.rowIndex == roundedRowIndex &&
+                hoveredDate >= segment.normalizedStartDate &&
+                hoveredDate <= segment.normalizedEndDate
+        }
+    }
+
     private func clearDailyBreakdownHover() {
         hoveredDailyBarSegmentID = nil
         hoveredDailyBarDayID = nil
@@ -809,10 +1030,48 @@ struct AnalyticsView: View {
         }
     }
 
+    private var chronologicalTimelineXAxis: some AxisContent {
+        AxisMarks(position: .bottom) { value in
+            AxisGridLine(stroke: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                .foregroundStyle(gridLineColor)
+            AxisTick()
+                .foregroundStyle(axisTickColor)
+            AxisValueLabel {
+                if let date = value.as(Date.self) {
+                    Text(TempoAppModel.formattedClockTime(date))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var chronologicalTimelineYAxis: some AxisContent {
+        AxisMarks(position: .leading, values: chronologicalTimelineRows.map { Double($0.rowIndex) }) { value in
+            AxisGridLine()
+                .foregroundStyle(axisTickColor)
+            AxisValueLabel {
+                if let rowIndex = value.as(Double.self),
+                   let row = chronologicalTimelineRows.first(where: { $0.rowIndex == Int(rowIndex.rounded()) }) {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(row.weekdayLabel)
+                        Text(row.dateLabel)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     private func dayStartDate(containing date: Date) -> Date {
         let dayOffset = calendar.dateComponents([.day], from: appModel.analyticsPeriod.startDate, to: date).day ?? 0
         let clampedOffset = max(dayOffset, 0)
         return calendar.date(byAdding: .day, value: clampedOffset, to: appModel.analyticsPeriod.startDate) ?? appModel.analyticsPeriod.startDate
+    }
+
+    private func normalizedTimelineDate(for date: Date, in dayStartDate: Date) -> Date {
+        appModel.analyticsPeriod.startDate.addingTimeInterval(date.timeIntervalSince(dayStartDate))
     }
 
     private func navigationButton(title: String, systemImage: String, isEnabled: Bool = true, action: @escaping () -> Void) -> some View {
@@ -872,6 +1131,14 @@ struct AnalyticsView: View {
 
     private func color(for projectID: UUID?, name: String) -> Color {
         projectPalette[Self.paletteIndex(for: projectID, name: name, paletteCount: projectPalette.count)]
+    }
+
+    private func timelineColor(for segment: AnalyticsChronologicalSegment) -> Color {
+        if segment.isIdle {
+            return isDarkMode ? Color.white.opacity(0.32) : Color.black.opacity(0.28)
+        }
+
+        return color(for: segment.projectID, name: segment.bucketName)
     }
 
     private var backgroundGradient: some View {
@@ -999,6 +1266,29 @@ private struct AnalyticsWeekProjectDuration: Identifiable {
     var id: String {
         "\(dayStartDate.timeIntervalSinceReferenceDate)-\(projectID.uuidString)"
     }
+}
+
+private struct AnalyticsTimelineDayRow {
+    let dayStartDate: Date
+    let displayDate: Date
+    let weekdayLabel: String
+    let dateLabel: String
+    let rowIndex: Int
+}
+
+private struct AnalyticsChronologicalSegment: Identifiable {
+    let id: String
+    let startDate: Date
+    let endDate: Date
+    let normalizedStartDate: Date
+    let normalizedEndDate: Date
+    let rowIndex: Int
+    let weekdayLabel: String
+    let dateLabel: String
+    let projectID: UUID?
+    let bucketName: String
+    let duration: TimeInterval
+    let isIdle: Bool
 }
 
 private struct AnalyticsWindowResolver: NSViewRepresentable {

@@ -21,6 +21,8 @@ final class AnalyticsPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("Time Statistics"))
         XCTAssertTrue(source.contains("Weekly Overview"))
         XCTAssertTrue(source.contains("Daily breakdown"))
+        XCTAssertTrue(source.contains("Daily timeline"))
+        XCTAssertTrue(source.contains("Chronological check-in intervals"))
         XCTAssertTrue(source.contains("Weekly share"))
     }
 
