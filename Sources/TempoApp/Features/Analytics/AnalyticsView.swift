@@ -41,6 +41,7 @@ struct AnalyticsView: View {
                 summaryCards
                 weeklyVisualsSection
                 chronologicalDailyBreakdownCard
+                allocationSection
             }
             .padding(28)
         }
@@ -259,7 +260,7 @@ struct AnalyticsView: View {
             } else {
                 weeklyShareChart
 
-                weeklyShareAllocationList
+                weeklyShareAllocationList(limit: 5)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -348,12 +349,59 @@ struct AnalyticsView: View {
         .frame(maxWidth: .infinity, minHeight: 320)
     }
 
-    private var weeklyShareAllocationList: some View {
-        VStack(spacing: 0) {
+    private func weeklyShareAllocationList(limit: Int? = nil) -> some View {
+        let summaries = limit.map { Array(workedProjectSummaries.prefix($0)) } ?? workedProjectSummaries
+
+        return VStack(spacing: 0) {
             weeklyShareAllocationHeader
 
-            ForEach(Array(workedProjectSummaries.enumerated()), id: \.element.id) { index, summary in
+            ForEach(Array(summaries.enumerated()), id: \.element.id) { index, summary in
                 weeklyShareAllocationRow(summary)
+
+                if index != summaries.indices.last {
+                    Divider()
+                        .overlay(separatorColor)
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(insetSurfaceFill)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(borderColor)
+        }
+    }
+
+    private var allocationSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            cardHeader(
+                title: "Project allocation",
+                subtitle: "Detailed totals for the selected week"
+            )
+
+            if workedProjectSummaries.isEmpty {
+                ContentUnavailableView(
+                    "No tracked time in this period",
+                    systemImage: "clock.badge.questionmark",
+                    description: Text("Change weeks or log time to populate the report.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 160)
+            } else {
+                projectAllocationTable
+            }
+        }
+        .padding(18)
+        .background(cardBackground)
+    }
+
+    private var projectAllocationTable: some View {
+        VStack(spacing: 0) {
+            projectAllocationHeader
+
+            ForEach(Array(workedProjectSummaries.enumerated()), id: \.element.id) { index, summary in
+                projectAllocationRow(summary)
 
                 if index != workedProjectSummaries.indices.last {
                     Divider()
@@ -444,6 +492,58 @@ struct AnalyticsView: View {
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 56, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private var projectAllocationHeader: some View {
+        HStack(spacing: 12) {
+            Text("Project")
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("Time")
+                .frame(width: 72, alignment: .trailing)
+
+            Text("Share")
+                .frame(width: 56, alignment: .trailing)
+
+            Text("Intervals")
+                .frame(width: 64, alignment: .trailing)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(tableHeaderFill)
+    }
+
+    private func projectAllocationRow(_ summary: AnalyticsProjectSummary) -> some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(color(for: summary.projectID, name: summary.projectName))
+                    .frame(width: 8, height: 8)
+
+                Text(summary.projectName)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(TempoAppModel.formattedTrackedDuration(summary.totalDuration))
+                .font(.subheadline.monospacedDigit())
+                .frame(width: 72, alignment: .trailing)
+
+            Text(summary.percentageOfTotal.formatted(percentStyle))
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 56, alignment: .trailing)
+
+            Text("\(summary.entryCount)")
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 64, alignment: .trailing)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
