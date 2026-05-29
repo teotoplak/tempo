@@ -34,12 +34,14 @@ final class AnalyticsPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("button.keyboardShortcut(keyboardShortcut, modifiers: [])"))
     }
 
-    func testAnalyticsViewContainsProjectAllocationSection() throws {
+    func testAnalyticsViewMergesAllocationIntoWeeklyShare() throws {
         let source = try sourceFile("Sources/TempoApp/Features/Analytics/AnalyticsView.swift")
 
-        XCTAssertTrue(source.contains("Project allocation"))
         XCTAssertTrue(source.contains("FloatingPointFormatStyle<Double>.Percent.percent"))
-        XCTAssertTrue(source.contains("Detailed totals for the selected week"))
+        XCTAssertTrue(source.contains("weeklyShareAllocationList"))
+        XCTAssertTrue(source.contains("Text(\"Time\")"))
+        XCTAssertFalse(source.contains("Project allocation"))
+        XCTAssertFalse(source.contains("Detailed totals for the selected week"))
     }
 
     func testAnalyticsViewContainsWeeklyChartEmptyStates() throws {
@@ -49,10 +51,10 @@ final class AnalyticsPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("No weekly allocation yet"))
     }
 
-    func testAnalyticsViewDefinesEmptyStateCopy() throws {
+    func testAnalyticsViewRemovedSeparateAllocationEmptyState() throws {
         let source = try sourceFile("Sources/TempoApp/Features/Analytics/AnalyticsView.swift")
 
-        XCTAssertTrue(source.contains("No tracked time in this period"))
+        XCTAssertFalse(source.contains("No tracked time in this period"))
     }
 
     func testAnalyticsViewContainsExportCSVAction() throws {

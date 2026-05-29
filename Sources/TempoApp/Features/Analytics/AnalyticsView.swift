@@ -39,7 +39,6 @@ struct AnalyticsView: View {
                 header
                 weekNavigator
                 summaryCards
-                allocationSection
                 weeklyVisualsSection
                 chronologicalDailyBreakdownCard
             }
@@ -260,25 +259,7 @@ struct AnalyticsView: View {
             } else {
                 weeklyShareChart
 
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(workedProjectSummaries.prefix(5), id: \.id) { summary in
-                        HStack(spacing: 10) {
-                            Circle()
-                                .fill(color(for: summary.projectID, name: summary.projectName))
-                                .frame(width: 10, height: 10)
-
-                            Text(summary.projectName)
-                                .font(.subheadline.weight(.medium))
-                                .lineLimit(1)
-
-                            Spacer()
-
-                            Text(summary.percentageOfTotal.formatted(percentStyle))
-                                .font(.subheadline.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
+                weeklyShareAllocationList
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -367,34 +348,12 @@ struct AnalyticsView: View {
         .frame(maxWidth: .infinity, minHeight: 320)
     }
 
-    private var allocationSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            cardHeader(
-                title: "Project allocation",
-                subtitle: "Detailed totals for the selected week"
-            )
-
-            if workedProjectSummaries.isEmpty {
-                ContentUnavailableView(
-                    "No tracked time in this period",
-                    systemImage: "clock.badge.questionmark",
-                    description: Text("Change weeks or log time to populate the report.")
-                )
-                .frame(maxWidth: .infinity, minHeight: 160)
-            } else {
-                compactAllocationTable
-            }
-        }
-        .padding(18)
-        .background(cardBackground)
-    }
-
-    private var compactAllocationTable: some View {
+    private var weeklyShareAllocationList: some View {
         VStack(spacing: 0) {
-            allocationTableHeader
+            weeklyShareAllocationHeader
 
             ForEach(Array(workedProjectSummaries.enumerated()), id: \.element.id) { index, summary in
-                allocationTableRow(summary)
+                weeklyShareAllocationRow(summary)
 
                 if index != workedProjectSummaries.indices.last {
                     Divider()
@@ -446,7 +405,7 @@ struct AnalyticsView: View {
         )
     }
 
-    private var allocationTableHeader: some View {
+    private var weeklyShareAllocationHeader: some View {
         HStack(spacing: 12) {
             Text("Project")
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -456,9 +415,6 @@ struct AnalyticsView: View {
 
             Text("Share")
                 .frame(width: 56, alignment: .trailing)
-
-            Text("Intervals")
-                .frame(width: 64, alignment: .trailing)
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(.secondary)
@@ -467,7 +423,7 @@ struct AnalyticsView: View {
         .background(tableHeaderFill)
     }
 
-    private func allocationTableRow(_ summary: AnalyticsProjectSummary) -> some View {
+    private func weeklyShareAllocationRow(_ summary: AnalyticsProjectSummary) -> some View {
         HStack(spacing: 12) {
             HStack(spacing: 10) {
                 Circle()
@@ -488,11 +444,6 @@ struct AnalyticsView: View {
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 56, alignment: .trailing)
-
-            Text("\(summary.entryCount)")
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 64, alignment: .trailing)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
