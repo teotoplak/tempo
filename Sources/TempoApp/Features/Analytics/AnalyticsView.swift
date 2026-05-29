@@ -131,7 +131,7 @@ struct AnalyticsView: View {
 
     private var weekNavigator: some View {
         HStack(spacing: 18) {
-            navigationButton(title: "Previous week", systemImage: "chevron.left") {
+            navigationButton(title: "Previous week", systemImage: "chevron.left", keyboardShortcut: .leftArrow) {
                 appModel.showPreviousAnalyticsPeriod()
             }
 
@@ -149,7 +149,8 @@ struct AnalyticsView: View {
             navigationButton(
                 title: "Next week",
                 systemImage: "chevron.right",
-                isEnabled: appModel.canShowNextAnalyticsPeriod
+                isEnabled: appModel.canShowNextAnalyticsPeriod,
+                keyboardShortcut: .rightArrow
             ) {
                 appModel.showNextAnalyticsPeriod()
             }
@@ -1074,8 +1075,15 @@ struct AnalyticsView: View {
         appModel.analyticsPeriod.startDate.addingTimeInterval(date.timeIntervalSince(dayStartDate))
     }
 
-    private func navigationButton(title: String, systemImage: String, isEnabled: Bool = true, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    @ViewBuilder
+    private func navigationButton(
+        title: String,
+        systemImage: String,
+        isEnabled: Bool = true,
+        keyboardShortcut: KeyEquivalent? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        let button = Button(action: action) {
             Image(systemName: systemImage)
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(isEnabled ? .primary : .secondary)
@@ -1089,6 +1097,12 @@ struct AnalyticsView: View {
             .buttonStyle(.plain)
             .disabled(!isEnabled)
             .accessibilityLabel(Text(title))
+
+        if let keyboardShortcut {
+            button.keyboardShortcut(keyboardShortcut, modifiers: [])
+        } else {
+            button
+        }
     }
 
     private func analyticsCard(title: String, value: String, detail: String) -> some View {

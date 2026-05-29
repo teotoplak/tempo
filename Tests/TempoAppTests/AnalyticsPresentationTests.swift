@@ -26,6 +26,14 @@ final class AnalyticsPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("Weekly share"))
     }
 
+    func testAnalyticsViewAddsArrowKeyWeekNavigation() throws {
+        let source = try sourceFile("Sources/TempoApp/Features/Analytics/AnalyticsView.swift")
+
+        XCTAssertTrue(source.contains("keyboardShortcut: .leftArrow"))
+        XCTAssertTrue(source.contains("keyboardShortcut: .rightArrow"))
+        XCTAssertTrue(source.contains("button.keyboardShortcut(keyboardShortcut, modifiers: [])"))
+    }
+
     func testAnalyticsViewContainsProjectAllocationSection() throws {
         let source = try sourceFile("Sources/TempoApp/Features/Analytics/AnalyticsView.swift")
 
