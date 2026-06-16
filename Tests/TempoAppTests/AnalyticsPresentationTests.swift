@@ -15,18 +15,20 @@ final class AnalyticsPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("Window(\"Time Statistics\", id: AppSceneID.analyticsWindow.rawValue)"))
     }
 
-    func testAnalyticsViewContainsWeeklyOverviewCopy() throws {
+    func testAnalyticsViewContainsRangeAwareOverviewCopy() throws {
         let source = try sourceFile("Sources/TempoApp/Features/Analytics/AnalyticsView.swift")
 
         XCTAssertTrue(source.contains("Time Statistics"))
-        XCTAssertTrue(source.contains("Weekly Overview"))
+        XCTAssertTrue(source.contains("selectedRangeTitle"))
+        XCTAssertTrue(source.contains("availablePresentationRanges: [AnalyticsRange] = [.week, .month]"))
+        XCTAssertTrue(source.contains("Picker(\"Range\", selection: selectedRangeBinding)"))
         XCTAssertTrue(source.contains("Daily breakdown"))
         XCTAssertTrue(source.contains("Daily timeline"))
         XCTAssertTrue(source.contains("Chronological check-in intervals"))
-        XCTAssertTrue(source.contains("Weekly share"))
+        XCTAssertTrue(source.contains("share"))
     }
 
-    func testAnalyticsViewAddsArrowKeyWeekNavigation() throws {
+    func testAnalyticsViewAddsArrowKeyPeriodNavigation() throws {
         let source = try sourceFile("Sources/TempoApp/Features/Analytics/AnalyticsView.swift")
 
         XCTAssertTrue(source.contains("keyboardShortcut: .leftArrow"))
@@ -34,7 +36,7 @@ final class AnalyticsPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("button.keyboardShortcut(keyboardShortcut, modifiers: [])"))
     }
 
-    func testAnalyticsViewKeepsWeeklyShareCompactWithTimeColumn() throws {
+    func testAnalyticsViewKeepsShareCompactWithTimeColumn() throws {
         let source = try sourceFile("Sources/TempoApp/Features/Analytics/AnalyticsView.swift")
 
         XCTAssertTrue(source.contains("FloatingPointFormatStyle<Double>.Percent.percent"))
@@ -42,18 +44,18 @@ final class AnalyticsPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("Text(\"Time\")"))
     }
 
-    func testAnalyticsViewContainsWeeklyChartEmptyStates() throws {
+    func testAnalyticsViewContainsRangeAwareChartEmptyStates() throws {
         let source = try sourceFile("Sources/TempoApp/Features/Analytics/AnalyticsView.swift")
 
-        XCTAssertTrue(source.contains("No project time this week"))
-        XCTAssertTrue(source.contains("No weekly allocation yet"))
+        XCTAssertTrue(source.contains("No project time this \\(periodNoun)"))
+        XCTAssertTrue(source.contains("No \\(periodAdjective) allocation yet"))
     }
 
     func testAnalyticsViewPlacesProjectAllocationAtBottom() throws {
         let source = try sourceFile("Sources/TempoApp/Features/Analytics/AnalyticsView.swift")
 
         XCTAssertTrue(source.contains("Project allocation"))
-        XCTAssertTrue(source.contains("Detailed totals for the selected week"))
+        XCTAssertTrue(source.contains("Detailed totals for the selected \\(periodNoun)"))
         XCTAssertTrue(source.contains("No tracked time in this period"))
 
         let timelineRange = try XCTUnwrap(source.range(of: "chronologicalDailyBreakdownCard"))

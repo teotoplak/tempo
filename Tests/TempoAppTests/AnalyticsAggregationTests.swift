@@ -127,6 +127,32 @@ final class AnalyticsAggregationTests: XCTestCase {
     }
 
     @MainActor
+    func testMonthlySummaryAnchorsPeriodToConfiguredCutoff() throws {
+        let container = TempoModelContainer.inMemory()
+        let context = ModelContext(container)
+        let store = AnalyticsStore(modelContext: context)
+        let project = ProjectRecord(name: "Deep Work", sortOrder: 0)
+        context.insert(project)
+        context.insert(projectCheckIn(project: project, at: date(2026, 3, 16, 8, 0, 0)))
+        context.insert(projectCheckIn(project: project, at: date(2026, 3, 16, 9, 0, 0)))
+        context.insert(projectCheckIn(project: project, at: date(2026, 4, 1, 8, 0, 0)))
+        context.insert(projectCheckIn(project: project, at: date(2026, 4, 1, 9, 0, 0)))
+        try context.save()
+
+        let summary = store.summary(
+            range: .month,
+            referenceDate: date(2026, 3, 18, 12, 0, 0),
+            calendar: testCalendar,
+            dayCutoffHour: 6
+        )
+
+        XCTAssertEqual(summary.period.startDate, date(2026, 3, 1, 6, 0, 0))
+        XCTAssertEqual(summary.period.endDate, date(2026, 4, 1, 6, 0, 0))
+        XCTAssertEqual(summary.totalDuration, 60 * 60, accuracy: 0.001)
+        XCTAssertEqual(summary.projectSummaries.count, 1)
+    }
+
+    @MainActor
     func testAnalyticsWeekNavigationMovesAcrossWeeksAndStopsAtCurrentWeek() throws {
         let now = date(2026, 3, 25, 12, 0, 0)
         let appModel = TempoAppModel(
@@ -156,6 +182,40 @@ final class AnalyticsAggregationTests: XCTestCase {
         appModel.showNextAnalyticsPeriod()
 
         XCTAssertEqual(appModel.analyticsPeriod.startDate, date(2026, 3, 23, 6, 0, 0))
+        XCTAssertEqual(appModel.analyticsTotalDuration, 60 * 60, accuracy: 0.001)
+        XCTAssertFalse(appModel.canShowNextAnalyticsPeriod)
+    }
+
+    @MainActor
+    func testAnalyticsMonthNavigationMovesAcrossMonthsAndStopsAtCurrentMonth() throws {
+        let now = date(2026, 4, 15, 12, 0, 0)
+        let appModel = TempoAppModel(
+            modelContainer: TempoModelContainer.inMemory(),
+            clock: FixedAnalyticsClock(now: now),
+            calendar: testCalendar
+        )
+        let project = ProjectRecord(name: "Deep Work", sortOrder: 0)
+        appModel.modelContext.insert(project)
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 10, 9, 0, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 3, 10, 11, 0, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 4, 10, 9, 0, 0)))
+        appModel.modelContext.insert(projectCheckIn(project: project, at: date(2026, 4, 10, 10, 0, 0)))
+        try appModel.modelContext.save()
+
+        appModel.selectAnalyticsRange(.month)
+
+        XCTAssertEqual(appModel.analyticsPeriod.startDate, date(2026, 4, 1, 6, 0, 0))
+        XCTAssertFalse(appModel.canShowNextAnalyticsPeriod)
+
+        appModel.showPreviousAnalyticsPeriod()
+
+        XCTAssertEqual(appModel.analyticsPeriod.startDate, date(2026, 3, 1, 6, 0, 0))
+        XCTAssertEqual(appModel.analyticsTotalDuration, 2 * 60 * 60, accuracy: 0.001)
+        XCTAssertTrue(appModel.canShowNextAnalyticsPeriod)
+
+        appModel.showNextAnalyticsPeriod()
+
+        XCTAssertEqual(appModel.analyticsPeriod.startDate, date(2026, 4, 1, 6, 0, 0))
         XCTAssertEqual(appModel.analyticsTotalDuration, 60 * 60, accuracy: 0.001)
         XCTAssertFalse(appModel.canShowNextAnalyticsPeriod)
     }

@@ -13,6 +13,7 @@ struct AnalyticsView: View {
     @State private var hoveredPieProjectID: String?
 
     private let percentStyle = FloatingPointFormatStyle<Double>.Percent.percent.precision(.fractionLength(0))
+    private let availablePresentationRanges: [AnalyticsRange] = [.week, .month]
     // Curated for higher contrast on the light analytics background.
     private let projectPalette: [Color] = [
         Color(red: 0.13, green: 0.45, blue: 0.75),
@@ -56,7 +57,7 @@ struct AnalyticsView: View {
                 "window-appeared",
                 metadata: ["dayCount": "\(weekDaySummaries.count)"]
             )
-            if appModel.selectedAnalyticsRange != .week {
+            if !availablePresentationRanges.contains(appModel.selectedAnalyticsRange) {
                 appModel.prepareWeeklyAnalyticsPresentation(resetReferenceDate: false)
             }
         }
@@ -99,7 +100,7 @@ struct AnalyticsView: View {
                 Text("Time Statistics")
                     .font(.system(size: 34, weight: .semibold, design: .rounded))
 
-                Text("Weekly allocation generated from your check-ins. Bars show each day, while the pie summarizes the whole week.")
+                Text("\(selectedRangeTitle) allocation generated from your check-ins. Bars show each day, while the pie summarizes the selected \(periodNoun).")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -131,12 +132,21 @@ struct AnalyticsView: View {
 
     private var weekNavigator: some View {
         HStack(spacing: 18) {
-            navigationButton(title: "Previous week", systemImage: "chevron.left", keyboardShortcut: .leftArrow) {
+            navigationButton(title: "Previous \(periodNoun)", systemImage: "chevron.left", keyboardShortcut: .leftArrow) {
                 appModel.showPreviousAnalyticsPeriod()
             }
 
-            VStack(spacing: 4) {
-                Text("Weekly Overview")
+            VStack(spacing: 8) {
+                Picker("Range", selection: selectedRangeBinding) {
+                    ForEach(availablePresentationRanges) { range in
+                        Text(range.title).tag(range)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+                .accessibilityLabel(Text("Analytics range"))
+
+                Text("\(selectedRangeTitle) Overview")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
@@ -147,7 +157,7 @@ struct AnalyticsView: View {
             .frame(maxWidth: .infinity)
 
             navigationButton(
-                title: "Next week",
+                title: "Next \(periodNoun)",
                 systemImage: "chevron.right",
                 isEnabled: appModel.canShowNextAnalyticsPeriod,
                 keyboardShortcut: .rightArrow
@@ -168,7 +178,7 @@ struct AnalyticsView: View {
 
     private var summaryCards: some View {
         HStack(alignment: .top, spacing: 16) {
-            analyticsCard(title: "Worked", value: TempoAppModel.formattedTrackedDuration(workedDuration), detail: "Project time for the selected week")
+            analyticsCard(title: "Worked", value: TempoAppModel.formattedTrackedDuration(workedDuration), detail: "Project time for the selected \(periodNoun)")
             analyticsCard(title: "Top project", value: topProjectCardText, detail: workedProjectSummaries.first.map { $0.percentageOfTotal.formatted(percentStyle) } ?? "No tracked time")
             analyticsCard(title: "Active days", value: "\(activeDayCount)/\(weekDaySummaries.count)", detail: idleDuration > 0 ? "Idle recorded: \(TempoAppModel.formattedTrackedDuration(idleDuration))" : "No idle time recorded")
         }
@@ -192,7 +202,7 @@ struct AnalyticsView: View {
         VStack(alignment: .leading, spacing: 18) {
             cardHeader(
                 title: "Daily breakdown",
-                subtitle: "Stacked hours per project for each day in the week"
+                subtitle: "Stacked hours per project for each day in the \(periodNoun)"
             )
 
             hoverSummaryBanner(
@@ -202,7 +212,7 @@ struct AnalyticsView: View {
 
             if workedProjectSummaries.isEmpty {
                 ContentUnavailableView(
-                    "No project time this week",
+                    "No project time this \(periodNoun)",
                     systemImage: "chart.bar.xaxis",
                     description: Text("Check-ins that resolve into project time will appear here automatically.")
                 )
@@ -241,20 +251,20 @@ struct AnalyticsView: View {
     private var weeklyPieChartCard: some View {
         VStack(alignment: .leading, spacing: 18) {
             cardHeader(
-                title: "Weekly share",
-                subtitle: "Project mix for the full week"
+                title: "\(selectedRangeTitle) share",
+                subtitle: "Project mix for the full \(periodNoun)"
             )
 
             hoverSummaryBanner(
                 info: weeklyShareHoverInfo,
-                placeholder: "Hover a pie slice to inspect weekly project hours."
+                placeholder: "Hover a pie slice to inspect \(periodAdjective) project hours."
             )
 
             if workedProjectSummaries.isEmpty {
                 ContentUnavailableView(
-                    "No weekly allocation yet",
+                    "No \(periodAdjective) allocation yet",
                     systemImage: "chart.pie",
-                    description: Text("Once a week contains project time, the share chart appears here.")
+                    description: Text("Once a \(periodNoun) contains project time, the share chart appears here.")
                 )
                 .frame(maxWidth: .infinity, minHeight: 320)
             } else {
@@ -272,7 +282,7 @@ struct AnalyticsView: View {
         VStack(alignment: .leading, spacing: 18) {
             cardHeader(
                 title: "Daily timeline",
-                subtitle: "Chronological check-in intervals for each day in the week"
+                subtitle: "Chronological check-in intervals for each day in the \(periodNoun)"
             )
 
             hoverSummaryBanner(
@@ -282,7 +292,7 @@ struct AnalyticsView: View {
 
             if chronologicalTimelineSegments.isEmpty {
                 ContentUnavailableView(
-                    "No check-in intervals this week",
+                    "No check-in intervals this \(periodNoun)",
                     systemImage: "chart.bar.doc.horizontal",
                     description: Text("Tempo needs at least two check-ins in a day to draw a chronological interval.")
                 )
@@ -378,14 +388,14 @@ struct AnalyticsView: View {
         VStack(alignment: .leading, spacing: 16) {
             cardHeader(
                 title: "Project allocation",
-                subtitle: "Detailed totals for the selected week"
+                subtitle: "Detailed totals for the selected \(periodNoun)"
             )
 
             if workedProjectSummaries.isEmpty {
                 ContentUnavailableView(
                     "No tracked time in this period",
                     systemImage: "clock.badge.questionmark",
-                    description: Text("Change weeks or log time to populate the report.")
+                    description: Text("Change \(periodNounPlural) or log time to populate the report.")
                 )
                 .frame(maxWidth: .infinity, minHeight: 160)
             } else {
@@ -580,6 +590,42 @@ struct AnalyticsView: View {
             }
     }
 
+    private var selectedRangeBinding: Binding<AnalyticsRange> {
+        Binding(
+            get: { appModel.selectedAnalyticsRange },
+            set: { range in
+                clearAnalyticsHover()
+                appModel.selectAnalyticsRange(range)
+            }
+        )
+    }
+
+    private var selectedRangeTitle: String {
+        appModel.selectedAnalyticsRange.title
+    }
+
+    private var periodNoun: String {
+        switch appModel.selectedAnalyticsRange {
+        case .month:
+            return "month"
+        default:
+            return "week"
+        }
+    }
+
+    private var periodNounPlural: String {
+        "\(periodNoun)s"
+    }
+
+    private var periodAdjective: String {
+        switch appModel.selectedAnalyticsRange {
+        case .month:
+            return "monthly"
+        default:
+            return "weekly"
+        }
+    }
+
     private var activeDayCount: Int {
         weekDaySummaries.filter { $0.workedDuration > 0 }.count
     }
@@ -639,7 +685,7 @@ struct AnalyticsView: View {
 
         return AnalyticsHoverInfo(
             title: summary.projectName,
-            subtitle: "\(TempoAppModel.formattedTrackedDuration(summary.totalDuration)) · \(summary.percentageOfTotal.formatted(percentStyle)) of week",
+            subtitle: "\(TempoAppModel.formattedTrackedDuration(summary.totalDuration)) · \(summary.percentageOfTotal.formatted(percentStyle)) of \(periodNoun)",
             color: color(for: summary.projectID, name: summary.projectName)
         )
     }
@@ -732,6 +778,24 @@ struct AnalyticsView: View {
         }
 
         return dates
+    }
+
+    private var dailyBreakdownXAxisDates: [Date] {
+        let dates = weekDaySummaries.map(\.displayDate)
+        guard dates.count > 14 else {
+            return dates
+        }
+
+        let step = dates.count > 45 ? 7 : 3
+        var sampledDates = dates.enumerated().compactMap { index, date in
+            index.isMultiple(of: step) ? date : nil
+        }
+
+        if let lastDate = dates.last, sampledDates.last != lastDate {
+            sampledDates.append(lastDate)
+        }
+
+        return sampledDates
     }
 
     private var chronologicalTimelineRows: [AnalyticsTimelineDayRow] {
@@ -828,7 +892,7 @@ struct AnalyticsView: View {
     }
 
     private var weekTotalsRow: some View {
-        HStack(alignment: .top, spacing: 12) {
+        LazyVGrid(columns: dayTotalsColumns, alignment: .leading, spacing: 10) {
             ForEach(weekDaySummaries) { day in
                 VStack(spacing: 4) {
                     Text(day.weekdayLabel)
@@ -845,6 +909,14 @@ struct AnalyticsView: View {
                 )
             }
         }
+    }
+
+    private var dayTotalsColumns: [GridItem] {
+        if weekDaySummaries.count <= 7 {
+            return Array(repeating: GridItem(.flexible(minimum: 72), spacing: 12), count: weekDaySummaries.count)
+        }
+
+        return [GridItem(.adaptive(minimum: 86), spacing: 10)]
     }
 
     @ChartContentBuilder
@@ -1048,6 +1120,12 @@ struct AnalyticsView: View {
         hoveredDailyBarDayID = nil
     }
 
+    private func clearAnalyticsHover() {
+        clearDailyBreakdownHover()
+        hoveredTimelineSegmentID = nil
+        hoveredPieProjectID = nil
+    }
+
     private var dailyBreakdownYAxis: some AxisContent {
         AxisMarks(position: .leading) { value in
             AxisGridLine(stroke: StrokeStyle(lineWidth: 1, dash: [4, 4]))
@@ -1063,7 +1141,7 @@ struct AnalyticsView: View {
     }
 
     private var dailyBreakdownXAxis: some AxisContent {
-        AxisMarks(values: weekDaySummaries.map(\.displayDate)) { value in
+        AxisMarks(values: dailyBreakdownXAxisDates) { value in
             AxisGridLine()
                 .foregroundStyle(.clear)
             AxisTick()
