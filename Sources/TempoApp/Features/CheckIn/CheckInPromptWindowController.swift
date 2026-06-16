@@ -11,6 +11,8 @@ final class CheckInPromptWindowController {
     private weak var appModel: TempoAppModel?
     private var priorActivationPolicy: NSApplication.ActivationPolicy?
     private var activationObserver: NSObjectProtocol?
+    private var screenParametersObserver: NSObjectProtocol?
+    private var currentPresentedState: CheckInPromptState?
 
     func bind(appModel: TempoAppModel) {
         self.appModel = appModel
@@ -27,9 +29,11 @@ final class CheckInPromptWindowController {
 
     func hide() {
         trace("hide", metadata: ["promptFrame": Self.traceRect(promptWindow?.frame)])
+        currentPresentedState = nil
         promptWindow?.orderOut(nil)
         backdropWindow?.orderOut(nil)
         removeActivationObserver()
+        removeScreenParametersObserver()
 
         if let priorActivationPolicy {
             NSApplication.shared.setActivationPolicy(priorActivationPolicy)
@@ -38,8 +42,15 @@ final class CheckInPromptWindowController {
     }
 
     func show(using state: CheckInPromptState) {
-        let screenFrame = NSScreen.main?.frame ?? .zero
-        let visibleFrame = NSScreen.main?.visibleFrame ?? screenFrame
+        currentPresentedState = state
+        let screenGeometry = Self.preferredPresentationScreenGeometry(
+            availableScreenGeometries: NSScreen.screens.map(Self.presentationScreenGeometry),
+            fallbackScreenGeometry: NSScreen.main.map(Self.presentationScreenGeometry),
+            mouseLocation: NSEvent.mouseLocation,
+            existingPromptFrame: promptWindow?.frame
+        )
+        let screenFrame = screenGeometry.frame
+        let visibleFrame = screenGeometry.visibleFrame
         let anchorRect = currentMenuBarAnchorRect(in: visibleFrame)
         trace(
             "show",
@@ -81,6 +92,7 @@ final class CheckInPromptWindowController {
         }
 
         installActivationObserverIfNeeded()
+        installScreenParametersObserverIfNeeded()
 
         // Only assert focus when the prompt is not already the key window. Calling
         // bringPromptToFront() unconditionally triggers activate(ignoringOtherApps:) on every
@@ -88,6 +100,55 @@ final class CheckInPromptWindowController {
         if promptWindow?.isKeyWindow != true {
             bringPromptToFront()
         }
+    }
+
+    private func installScreenParametersObserverIfNeeded() {
+        guard screenParametersObserver == nil else {
+            return
+        }
+
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleScreenParametersChanged()
+            }
+        }
+    }
+
+    private func removeScreenParametersObserver() {
+        guard let screenParametersObserver else {
+            return
+        }
+
+        NotificationCenter.default.removeObserver(screenParametersObserver)
+        self.screenParametersObserver = nil
+    }
+
+    private func handleScreenParametersChanged() {
+        trace(
+            "screen-parameters-changed",
+            metadata: [
+                "screenCount": "\(NSScreen.screens.count)",
+                "promptFrame": Self.traceRect(promptWindow?.frame)
+            ]
+        )
+        refreshPromptLayoutAfterScreenChange()
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            self.refreshPromptLayoutAfterScreenChange()
+        }
+    }
+
+    private func refreshPromptLayoutAfterScreenChange() {
+        guard let currentPresentedState, currentPresentedState.isPresented else {
+            return
+        }
+
+        show(using: currentPresentedState)
     }
 
     private func promoteAppForPromptInteraction() {
@@ -246,6 +307,40 @@ final class CheckInPromptWindowController {
         state.isPresented
     }
 
+    static func preferredPresentationScreenGeometry(
+        availableScreenGeometries: [PresentationScreenGeometry],
+        fallbackScreenGeometry: PresentationScreenGeometry?,
+        mouseLocation: CGPoint,
+        existingPromptFrame: CGRect?
+    ) -> PresentationScreenGeometry {
+        let screenGeometries = availableScreenGeometries.isEmpty
+            ? fallbackScreenGeometry.map { [$0] } ?? []
+            : availableScreenGeometries
+
+        if let existingPromptFrame,
+           let visibleScreen = screenGeometries.first(where: {
+               $0.visibleFrame.intersects(existingPromptFrame)
+           }) {
+            return visibleScreen
+        }
+
+        if let mouseScreen = screenGeometries.first(where: {
+            $0.frame.contains(mouseLocation)
+        }) {
+            return mouseScreen
+        }
+
+        if let fallbackScreenGeometry {
+            return fallbackScreenGeometry
+        }
+
+        return screenGeometries.first ?? PresentationScreenGeometry(frame: .zero, visibleFrame: .zero)
+    }
+
+    private static func presentationScreenGeometry(for screen: NSScreen) -> PresentationScreenGeometry {
+        PresentationScreenGeometry(frame: screen.frame, visibleFrame: screen.visibleFrame)
+    }
+
     private func trace(_ event: String, metadata: [String: String] = [:]) {
         appModel?.recordPromptWindowEvent(event, metadata: metadata)
     }
@@ -266,6 +361,11 @@ final class CheckInPromptWindowController {
             "subtitle=\(state.supportingSubtitle)"
         ].joined(separator: ",")
     }
+}
+
+struct PresentationScreenGeometry: Equatable {
+    let frame: CGRect
+    let visibleFrame: CGRect
 }
 
 private final class CheckInPromptWindow: NSWindow {

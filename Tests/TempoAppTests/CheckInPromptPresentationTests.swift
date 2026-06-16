@@ -96,6 +96,62 @@ final class CheckInPromptPresentationTests: XCTestCase {
     }
 
     @MainActor
+    func testPresentationScreenKeepsVisiblePromptOnCurrentScreen() {
+        let leftScreen = PresentationScreenGeometry(
+            frame: CGRect(x: -1440, y: -670, width: 1440, height: 2560),
+            visibleFrame: CGRect(x: -1440, y: -670, width: 1440, height: 2530)
+        )
+        let builtInScreen = PresentationScreenGeometry(
+            frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 949)
+        )
+
+        let selected = CheckInPromptWindowController.preferredPresentationScreenGeometry(
+            availableScreenGeometries: [leftScreen, builtInScreen],
+            fallbackScreenGeometry: builtInScreen,
+            mouseLocation: CGPoint(x: 700, y: 500),
+            existingPromptFrame: CGRect(x: -930, y: 415, width: 420, height: 360)
+        )
+
+        XCTAssertEqual(selected, leftScreen)
+    }
+
+    @MainActor
+    func testPresentationScreenMovesOffscreenPromptToMouseScreen() {
+        let disconnectedPromptFrame = CGRect(x: -930, y: 415, width: 420, height: 360)
+        let builtInScreen = PresentationScreenGeometry(
+            frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 949)
+        )
+
+        let selected = CheckInPromptWindowController.preferredPresentationScreenGeometry(
+            availableScreenGeometries: [builtInScreen],
+            fallbackScreenGeometry: builtInScreen,
+            mouseLocation: CGPoint(x: 700, y: 500),
+            existingPromptFrame: disconnectedPromptFrame
+        )
+
+        XCTAssertEqual(selected, builtInScreen)
+    }
+
+    @MainActor
+    func testPresentationScreenFallsBackWhenPromptAndMouseAreOffscreen() {
+        let builtInScreen = PresentationScreenGeometry(
+            frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 949)
+        )
+
+        let selected = CheckInPromptWindowController.preferredPresentationScreenGeometry(
+            availableScreenGeometries: [builtInScreen],
+            fallbackScreenGeometry: builtInScreen,
+            mouseLocation: CGPoint(x: -700, y: 500),
+            existingPromptFrame: CGRect(x: -930, y: 415, width: 420, height: 360)
+        )
+
+        XCTAssertEqual(selected, builtInScreen)
+    }
+
+    @MainActor
     func testNextRuntimeUpdateUsesNextCheckInWhenPromptIsNotShown() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let appModel = TempoAppModel(
