@@ -58,16 +58,59 @@ if [[ -n "$existing_pids" ]]; then
   fi
 fi
 
-launchctl submit -l "$LAUNCH_LABEL" -o "$LOG_PATH" -e "$LOG_PATH" -- "$APP_BIN"
-sleep 0.5
+# Wrap the built binary in a minimal .app bundle. The SwiftUI MenuBarExtra
+# window (.menuBarExtraStyle(.window)) is only hosted correctly when the
+# process runs from a real bundle with a bundle identifier and LSUIElement;
+# launching the bare executable renders the menu-bar popover empty. The bundle
+# lives inside the gitignored .build dir and is a dev-only relaunch artifact,
+# not a persistent install.
+APP_BUNDLE="$(swift build --show-bin-path)/Tempo.app"
+
+rm -rf "$APP_BUNDLE"
+mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
+cp "$APP_BIN" "$APP_BUNDLE/Contents/MacOS/TempoApp"
+
+cat >"$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Tempo</string>
+    <key>CFBundleDisplayName</key>
+    <string>Tempo</string>
+    <key>CFBundleExecutable</key>
+    <string>TempoApp</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.tempo.dev</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>15.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Local dev build</string>
+</dict>
+</plist>
+PLIST
+
+codesign --force --sign - "$APP_BUNDLE" >/dev/null 2>&1 || true
+
+open "$APP_BUNDLE"
+sleep 1
 
 started_pids="$(pgrep -x TempoApp || true)"
 if [[ -z "$started_pids" ]]; then
-  echo "TempoApp did not stay running. Log: $LOG_PATH" >&2
+  echo "TempoApp did not stay running." >&2
   exit 1
 fi
 
 printf '%s\n' "$started_pids" | head -n 1 >"$PID_PATH"
 
 echo "TempoApp started with pid $(cat "$PID_PATH")"
-echo "Log: $LOG_PATH"
+echo "Bundle: $APP_BUNDLE"

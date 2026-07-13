@@ -112,8 +112,11 @@ struct MenuBarRootView: View {
             .padding(14)
         }
         .scrollIndicators(.hidden)
-        .frame(width: 320)
-        .frame(idealHeight: 440, maxHeight: 560)
+        // MenuBarExtra(.window) on macOS 26 (Tahoe) does not honor a ScrollView's
+        // idealHeight when sizing the popover window, so the window collapses to a
+        // near-zero-height blank pill. Pin a concrete height so the window always
+        // opens at full size; the ScrollView handles any overflow.
+        .frame(width: 320, height: 480)
     }
 
     private var header: some View {
