@@ -31,6 +31,7 @@
   - `runtime-timer-scheduled`, `runtime-timer-fired`, or `runtime-timer-cleared`
   - `runtime-state-applied` and `prompt-state-updated`
   - prompt window events from `CheckInPromptWindowController` such as `show`, `bring-to-front`, and `hide`
+  - `committed-window-opened`, `committed-window-closed`, and `committed-window-ended-early`, plus `committedWindowEndsAt` in the runtime metadata; a committed window suppresses prompts and idle detection by design until it ends
 - If the trace shows state transitions into a presented prompt but no matching prompt window events, suspect presentation/focus issues.
 - If the trace never reaches a presented prompt state, suspect notification delivery, idle sampling, or scheduler state recovery.
 

@@ -9,6 +9,9 @@ final class CheckInRecord {
     var source: String
     var idleKind: String?
     var project: ProjectRecord?
+    /// End of the window this check-in commits to, when the user picked a fixed length.
+    /// Tempo stays quiet until then and attributes the whole window to this check-in.
+    var committedWindowEndsAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -16,7 +19,8 @@ final class CheckInRecord {
         kind: String,
         source: String,
         idleKind: String? = nil,
-        project: ProjectRecord? = nil
+        project: ProjectRecord? = nil,
+        committedWindowEndsAt: Date? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -24,5 +28,6 @@ final class CheckInRecord {
         self.source = source
         self.idleKind = idleKind
         self.project = project
+        self.committedWindowEndsAt = committedWindowEndsAt
     }
 }

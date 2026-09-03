@@ -30,6 +30,7 @@ struct DerivedRuntimeState: Equatable {
     var pendingIdleStartedAt: Date?
     var pendingIdleEndedAt: Date?
     var pendingIdleReason: String?
+    var committedWindowEndsAt: Date?
 }
 
 enum PromptProjectSelection: Equatable {
@@ -53,6 +54,7 @@ enum IdleResolutionError: LocalizedError {
 final class TempoAppModel {
     private static let promptProjectDisplayLimit = 4
     private static let pendingIdlePromptReminderInterval: TimeInterval = 60
+    private static let committedWindowEndSource = "committed-window-end"
     private static let userActivityEventSamples: [(label: String, state: CGEventSourceStateID, event: CGEventType)] = [
         ("hid-mouse-moved", .hidSystemState, .mouseMoved),
         ("combined-mouse-moved", .combinedSessionState, .mouseMoved),
@@ -123,6 +125,8 @@ final class TempoAppModel {
     var pendingIdleEndedAt: Date?
     var pendingIdleReason: String?
     var pendingIdleDuration: TimeInterval = 0
+    var committedWindowEndsAt: Date?
+    var promptWindowLength: CheckInWindowLength = .pollingDefault
     var promptProjectSelection: PromptProjectSelection?
     var checkInPromptState = CheckInPromptState.hidden
     var promptSearchText = ""
@@ -414,6 +418,7 @@ final class TempoAppModel {
             pendingIdlePromptSnoozedUntil = clock.now.addingTimeInterval(Self.pendingIdlePromptReminderInterval)
         }
         checkInPromptState.isPresented = false
+        promptWindowLength = .pollingDefault
         var metadata = ["willRemindPendingIdlePrompt": "\(shouldRemindPendingIdlePrompt)"]
         if let pendingIdlePromptSnoozedUntil {
             metadata["pendingIdlePromptReminderAt"] = Self.traceTimestamp(pendingIdlePromptSnoozedUntil)
@@ -488,6 +493,42 @@ final class TempoAppModel {
         ).totalDuration
     }
 
+    var isCommittedWindowActive: Bool {
+        committedWindowEndsAt != nil
+    }
+
+    var promptWindowLengthOptions: [CheckInWindowLength] {
+        CheckInWindowLength.selectableOptions
+    }
+
+    func promptWindowLengthDisplayName(_ windowLength: CheckInWindowLength) -> String {
+        windowLength.displayName(pollingIntervalMinutes: settings.pollingIntervalMinutes)
+    }
+
+    var committedWindowActivityName: String? {
+        guard isCommittedWindowActive, let latestCheckIn = latestCheckInRecord() else {
+            return nil
+        }
+
+        switch latestCheckIn.kind {
+        case "project":
+            return latestCheckIn.project?.name ?? "Unknown project"
+        case "untracked":
+            return "Untracked"
+        default:
+            return nil
+        }
+    }
+
+    func committedWindowRemainingText(at date: Date) -> String? {
+        guard let committedWindowEndsAt else {
+            return nil
+        }
+
+        let remaining = max(committedWindowEndsAt.timeIntervalSince(date), 0)
+        return "\(Self.formattedCompactDuration(remaining)) left · until \(Self.formattedClockTime(committedWindowEndsAt))"
+    }
+
     func menuBarCountdownMinutesText(at date: Date) -> String? {
         guard !isSilenced, let nextCheckInAt else {
             return nil
@@ -500,6 +541,11 @@ final class TempoAppModel {
     func menuBarPrimaryStatus(at date: Date) -> String {
         if isSilenced, let silenceEndsAt {
             return silencePrimaryStatus(at: date, silenceEndsAt: silenceEndsAt)
+        }
+
+        if let committedWindowEndsAt {
+            let remaining = max(committedWindowEndsAt.timeIntervalSince(date), 0)
+            return "Committed for \(Self.formattedCompactDuration(remaining)) more"
         }
 
         if isPromptOverdue {
@@ -517,6 +563,10 @@ final class TempoAppModel {
     func menuBarSecondaryStatus(at date: Date) -> String {
         if isSilenced, let silenceEndsAt {
             return silenceSecondaryStatus(at: date, silenceEndsAt: silenceEndsAt)
+        }
+
+        if let committedWindowEndsAt {
+            return "No check-ins until \(Self.formattedClockTime(committedWindowEndsAt))"
         }
 
         if isPromptOverdue {
@@ -555,6 +605,10 @@ final class TempoAppModel {
         let checkedInText = "Checked in at \(Self.formattedClockTime(latestCheckIn.timestamp))"
         if isSilenced, let silenceEndsAt {
             return "\(checkedInText) · \(silenceSecondaryStatus(at: date, silenceEndsAt: silenceEndsAt))"
+        }
+
+        if let committedWindowRemainingText = committedWindowRemainingText(at: date) {
+            return "\(checkedInText) · \(committedWindowRemainingText)"
         }
 
         if isPromptOverdue {
@@ -835,6 +889,8 @@ final class TempoAppModel {
 
     func silenceForRestOfDay(trigger: String = "unknown") throws {
         trace("done-for-day-requested", metadata: ["source": trigger])
+        // An active committed window needs no closing marker here: the idle check-in ends the
+        // window, and `projectBeforeIdle` already credits the elapsed part to the project.
         persistIdleCheckIn(
             at: clock.now,
             idleKind: .doneForDay,
@@ -864,6 +920,11 @@ final class TempoAppModel {
             return
         }
 
+        if endCommittedWindowEarly(trigger: trigger) {
+            presentCheckInPromptIfNeeded()
+            return
+        }
+
         let pollingInterval = TimeInterval(settings.pollingIntervalMinutes * 60)
         let promptReference = nextCheckInAt ?? clock.now
         let referenceStart = latestSchedulingAnchorDate() ?? promptReference.addingTimeInterval(-pollingInterval)
@@ -880,13 +941,14 @@ final class TempoAppModel {
         }
 
         let completionDate = max(clock.now, pendingIdleEndedAt)
-        persistProjectCheckIn(project, at: completionDate, source: "idle-return")
+        persistProjectCheckIn(
+            project,
+            at: completionDate,
+            source: "idle-return",
+            committedWindowEndsAt: requestedCommittedWindowEnd(from: completionDate)
+        )
         try modelContext.save()
-        refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
-        reloadAnalytics()
-        promptSearchText = ""
-        refreshCheckInPromptState()
-        dismissCheckInPrompt()
+        finishPromptSelection(at: completionDate)
     }
 
     func assignPendingIdleToUntracked() throws {
@@ -895,13 +957,13 @@ final class TempoAppModel {
         }
 
         let completionDate = max(clock.now, pendingIdleEndedAt)
-        persistUntrackedCheckIn(at: completionDate, source: "idle-return")
+        persistUntrackedCheckIn(
+            at: completionDate,
+            source: "idle-return",
+            committedWindowEndsAt: requestedCommittedWindowEnd(from: completionDate)
+        )
         try modelContext.save()
-        refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
-        reloadAnalytics()
-        promptSearchText = ""
-        refreshCheckInPromptState()
-        dismissCheckInPrompt()
+        finishPromptSelection(at: completionDate)
     }
 
     func discardPendingIdle() throws {
@@ -919,6 +981,9 @@ final class TempoAppModel {
         let referenceDate = clock.now
         let sampledActivityDate = activityDate ?? currentUserActivityDate(referenceDate: referenceDate)
         trace("handle-screen-lock")
+        if closeCommittedWindowIfNeeded(at: referenceDate) {
+            reloadAnalytics()
+        }
         guard latestCheckInRecord()?.kind != "idle" else {
             refreshRuntimeState(eventDate: referenceDate)
             return
@@ -967,7 +1032,7 @@ final class TempoAppModel {
             return
         }
 
-        if isSilenced || isIdlePending {
+        if isSilenced || isIdlePending || isCommittedWindowActive {
             recoverSchedulerState(eventDate: clock.now)
         } else {
             rescheduleNextCheckInFromSettingsChange(at: clock.now)
@@ -1155,23 +1220,34 @@ final class TempoAppModel {
         return try? modelContext.fetch(descriptor).first
     }
 
-    private func persistProjectCheckIn(_ project: ProjectRecord, at timestamp: Date, source: String) {
+    private func persistProjectCheckIn(
+        _ project: ProjectRecord,
+        at timestamp: Date,
+        source: String,
+        committedWindowEndsAt: Date? = nil
+    ) {
         modelContext.insert(
             CheckInRecord(
                 timestamp: timestamp,
                 kind: "project",
                 source: source,
-                project: project
+                project: project,
+                committedWindowEndsAt: committedWindowEndsAt
             )
         )
     }
 
-    private func persistUntrackedCheckIn(at timestamp: Date, source: String) {
+    private func persistUntrackedCheckIn(
+        at timestamp: Date,
+        source: String,
+        committedWindowEndsAt: Date? = nil
+    ) {
         modelContext.insert(
             CheckInRecord(
                 timestamp: timestamp,
                 kind: "untracked",
-                source: source
+                source: source,
+                committedWindowEndsAt: committedWindowEndsAt
             )
         )
     }
@@ -1384,6 +1460,10 @@ final class TempoAppModel {
         activityDate: Date? = nil,
         allowScreenLockReturnFallback: Bool = false
     ) {
+        if closeCommittedWindowIfNeeded(at: eventDate) {
+            reloadAnalytics()
+        }
+
         apply(
             runtimeState: deriveRuntimeState(
                 eventDate: eventDate,
@@ -1427,7 +1507,8 @@ final class TempoAppModel {
                 isIdlePending: isIdlePending,
                 pendingIdleStartedAt: pendingIdleStartedAt,
                 pendingIdleEndedAt: pendingIdleEndedAt,
-                pendingIdleReason: pendingIdleReason
+                pendingIdleReason: pendingIdleReason,
+                committedWindowEndsAt: committedWindowEndsAt
             ),
             promptPresentedAt: promptPresentedAt
         )
@@ -1521,7 +1602,9 @@ final class TempoAppModel {
         return CheckInTriggerLatestCheckIn(
             timestamp: record.timestamp,
             kind: kind,
-            source: record.source
+            source: record.source,
+            committedWindowEndsAt: record.committedWindowEndsAt,
+            closesCommittedWindow: record.source == committedWindowEndSource
         )
     }
 
@@ -1566,7 +1649,8 @@ final class TempoAppModel {
             isIdlePending: isIdlePending,
             pendingIdleStartedAt: pendingIdleStartedAt,
             pendingIdleEndedAt: pendingIdleEndedAt,
-            pendingIdleReason: pendingIdleReason
+            pendingIdleReason: pendingIdleReason,
+            committedWindowEndsAt: committedWindowEndsAt
         )
 
         nextCheckInAt = runtimeState.nextCheckInAt
@@ -1578,6 +1662,7 @@ final class TempoAppModel {
         pendingIdleStartedAt = runtimeState.pendingIdleStartedAt
         pendingIdleEndedAt = runtimeState.pendingIdleEndedAt
         pendingIdleReason = runtimeState.pendingIdleReason
+        committedWindowEndsAt = runtimeState.committedWindowEndsAt
         if !runtimeState.isIdlePending || runtimeState.pendingIdleEndedAt == nil {
             pendingIdlePromptSnoozedUntil = nil
         }
@@ -1706,6 +1791,9 @@ final class TempoAppModel {
         scheduledPromptTimer?.invalidate()
         scheduledPromptTimer = nil
         trace("runtime-timer-fired")
+        if closeCommittedWindowIfNeeded(at: clock.now) {
+            reloadAnalytics()
+        }
         let decision = checkInTriggerEngine.decide(
             signal: .timerElapsed(
                 at: clock.now,
@@ -1807,7 +1895,7 @@ final class TempoAppModel {
     }
 
     private func presentLaunchCheckInPrompt() {
-        guard !isSilenced, !isIdlePending else {
+        guard !isSilenced, !isIdlePending, !isCommittedWindowActive else {
             return
         }
 
@@ -1851,9 +1939,30 @@ final class TempoAppModel {
 
     private func persistFreshPromptSelection(for project: ProjectRecord) throws {
         let completionDate = clock.now
-        persistProjectCheckIn(project, at: completionDate, source: "check-in")
+        persistProjectCheckIn(
+            project,
+            at: completionDate,
+            source: "check-in",
+            committedWindowEndsAt: requestedCommittedWindowEnd(from: completionDate)
+        )
         try modelContext.save()
 
+        finishPromptSelection(at: completionDate)
+    }
+
+    private func persistFreshUntrackedSelection() throws {
+        let completionDate = clock.now
+        persistUntrackedCheckIn(
+            at: completionDate,
+            source: "check-in",
+            committedWindowEndsAt: requestedCommittedWindowEnd(from: completionDate)
+        )
+        try modelContext.save()
+
+        finishPromptSelection(at: completionDate)
+    }
+
+    private func finishPromptSelection(at completionDate: Date) {
         refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
         reloadAnalytics()
         promptSearchText = ""
@@ -1861,16 +1970,87 @@ final class TempoAppModel {
         dismissCheckInPrompt()
     }
 
-    private func persistFreshUntrackedSelection() throws {
-        let completionDate = clock.now
-        persistUntrackedCheckIn(at: completionDate, source: "check-in")
-        try modelContext.save()
+    private func requestedCommittedWindowEnd(from startDate: Date) -> Date? {
+        guard let committedWindowEnd = promptWindowLength.committedWindowEnd(from: startDate) else {
+            return nil
+        }
 
-        refreshRuntimeState(eventDate: completionDate, activityDate: completionDate)
+        trace(
+            "committed-window-opened",
+            metadata: [
+                "committedWindowEndsAt": Self.traceTimestamp(committedWindowEnd),
+                "committedMinutes": "\(promptWindowLength.committedMinutes ?? 0)"
+            ]
+        )
+        return committedWindowEnd
+    }
+
+    /// Banks the elapsed part of an active committed window and lets the regular prompt take
+    /// over, so "Check In Now" is always a way out of a window that turned out too long.
+    @discardableResult
+    private func endCommittedWindowEarly(trigger: String) -> Bool {
+        guard isCommittedWindowActive else {
+            return false
+        }
+
+        let referenceDate = clock.now
+        guard closeCommittedWindowIfNeeded(at: referenceDate, isEarlyExit: true) else {
+            return false
+        }
+
+        trace("committed-window-ended-early", metadata: ["source": trigger])
+        promptPresentedAt = nil
+        refreshRuntimeState(eventDate: referenceDate, activityDate: referenceDate)
         reloadAnalytics()
-        promptSearchText = ""
         refreshCheckInPromptState()
-        dismissCheckInPrompt()
+        return true
+    }
+
+    /// Writes the marker that closes an elapsed committed window so the whole window is
+    /// attributed to the check-in that opened it, whatever the user answers next.
+    /// Returns `true` when a marker was written.
+    @discardableResult
+    private func closeCommittedWindowIfNeeded(at referenceDate: Date, isEarlyExit: Bool = false) -> Bool {
+        guard
+            let openingCheckIn = latestCheckInRecord(),
+            let committedWindowEndsAt = openingCheckIn.committedWindowEndsAt,
+            openingCheckIn.source != Self.committedWindowEndSource,
+            committedWindowEndsAt > openingCheckIn.timestamp
+        else {
+            return false
+        }
+
+        guard isEarlyExit || referenceDate >= committedWindowEndsAt else {
+            return false
+        }
+
+        let closingDate = isEarlyExit
+            ? min(max(referenceDate, openingCheckIn.timestamp), committedWindowEndsAt)
+            : committedWindowEndsAt
+
+        switch openingCheckIn.kind {
+        case "project":
+            guard let project = openingCheckIn.project else {
+                return false
+            }
+
+            persistProjectCheckIn(project, at: closingDate, source: Self.committedWindowEndSource)
+        case "untracked":
+            persistUntrackedCheckIn(at: closingDate, source: Self.committedWindowEndSource)
+        default:
+            return false
+        }
+
+        try? modelContext.save()
+        trace(
+            "committed-window-closed",
+            metadata: [
+                "closingDate": Self.traceTimestamp(closingDate),
+                "committedWindowEndsAt": Self.traceTimestamp(committedWindowEndsAt),
+                "isEarlyExit": "\(isEarlyExit)"
+            ]
+        )
+        return true
     }
 
     func recordPromptWindowEvent(_ event: String, metadata: [String: String] = [:]) {
@@ -1982,6 +2162,7 @@ final class TempoAppModel {
             "pendingIdleStartedAt": Self.traceTimestamp(pendingIdleStartedAt),
             "pendingIdleEndedAt": Self.traceTimestamp(pendingIdleEndedAt),
             "pendingIdleReason": pendingIdleReason ?? "nil",
+            "committedWindowEndsAt": Self.traceTimestamp(committedWindowEndsAt),
             "promptPresented": "\(checkInPromptState.isPresented)"
         ]
     }
@@ -2162,7 +2343,8 @@ private extension DerivedRuntimeState {
             "isIdlePending=\(isIdlePending)",
             "pendingIdleStartedAt=\(TempoAppModel.traceTimestamp(pendingIdleStartedAt))",
             "pendingIdleEndedAt=\(TempoAppModel.traceTimestamp(pendingIdleEndedAt))",
-            "pendingIdleReason=\(pendingIdleReason ?? "nil")"
+            "pendingIdleReason=\(pendingIdleReason ?? "nil")",
+            "committedWindowEndsAt=\(TempoAppModel.traceTimestamp(committedWindowEndsAt))"
         ].joined(separator: ",")
     }
 }

@@ -35,6 +35,10 @@ struct CheckInTriggerLatestCheckIn: Equatable {
     var timestamp: Date
     var kind: Kind
     var source: String
+    var committedWindowEndsAt: Date?
+    /// Set on the marker Tempo writes when a committed window runs out, so scheduling anchors
+    /// the next check-in at that marker instead of a full polling interval later.
+    var closesCommittedWindow = false
 }
 
 struct CheckInTriggerContext: Equatable {
@@ -128,6 +132,19 @@ struct CheckInTriggerEngine {
         eventDate: Date,
         activityDate: Date?
     ) -> CheckInTriggerDecision {
+        if
+            let latestCheckIn = context.latestCheckIn,
+            let committedWindowState = committedWindowRuntimeState(
+                latestCheckIn: latestCheckIn,
+                eventDate: eventDate
+            ),
+            committedWindowState.committedWindowEndsAt != nil
+        {
+            // Locking the screen inside a committed window must not record idle time: the user
+            // already declared what that window counts as.
+            return CheckInTriggerDecision(runtimeState: committedWindowState, prompt: .hidden)
+        }
+
         if case .idle? = context.latestCheckIn?.kind {
             let runtimeState = recoverRuntimeState(
                 context: context,
@@ -283,6 +300,13 @@ struct CheckInTriggerEngine {
 
         switch latestCheckIn.kind {
         case .project, .resume, .untracked:
+            if let committedWindowState = committedWindowRuntimeState(
+                latestCheckIn: latestCheckIn,
+                eventDate: eventDate
+            ) {
+                return committedWindowState
+            }
+
             let nextCheckInAt = latestCheckIn.timestamp.addingTimeInterval(pollingInterval)
             let isPromptOverdue = eventDate >= nextCheckInAt
             let accountableElapsedInterval = isPromptOverdue
@@ -368,6 +392,59 @@ struct CheckInTriggerEngine {
                 pendingIdleReason: latestCheckIn.source
             )
         }
+    }
+
+    private func committedWindowRuntimeState(
+        latestCheckIn: CheckInTriggerLatestCheckIn,
+        eventDate: Date
+    ) -> DerivedRuntimeState? {
+        if latestCheckIn.closesCommittedWindow {
+            return DerivedRuntimeState(
+                nextCheckInAt: latestCheckIn.timestamp,
+                isPromptOverdue: eventDate >= latestCheckIn.timestamp,
+                accountableElapsedInterval: max(eventDate.timeIntervalSince(latestCheckIn.timestamp), 0),
+                isSilenced: false,
+                silenceEndsAt: nil,
+                isIdlePending: false,
+                pendingIdleStartedAt: nil,
+                pendingIdleEndedAt: nil,
+                pendingIdleReason: nil
+            )
+        }
+
+        guard
+            let committedWindowEndsAt = latestCheckIn.committedWindowEndsAt,
+            committedWindowEndsAt > latestCheckIn.timestamp
+        else {
+            return nil
+        }
+
+        guard eventDate < committedWindowEndsAt else {
+            return DerivedRuntimeState(
+                nextCheckInAt: committedWindowEndsAt,
+                isPromptOverdue: true,
+                accountableElapsedInterval: eventDate.timeIntervalSince(committedWindowEndsAt),
+                isSilenced: false,
+                silenceEndsAt: nil,
+                isIdlePending: false,
+                pendingIdleStartedAt: nil,
+                pendingIdleEndedAt: nil,
+                pendingIdleReason: nil
+            )
+        }
+
+        return DerivedRuntimeState(
+            nextCheckInAt: committedWindowEndsAt,
+            isPromptOverdue: false,
+            accountableElapsedInterval: committedWindowEndsAt.timeIntervalSince(latestCheckIn.timestamp),
+            isSilenced: false,
+            silenceEndsAt: nil,
+            isIdlePending: false,
+            pendingIdleStartedAt: nil,
+            pendingIdleEndedAt: nil,
+            pendingIdleReason: nil,
+            committedWindowEndsAt: committedWindowEndsAt
+        )
     }
 
     private func prompt(for runtimeState: DerivedRuntimeState) -> CheckInTriggerPrompt {

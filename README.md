@@ -37,6 +37,7 @@ The goal is simple: make time tracking accurate enough that you do not have to r
 - Prompts for check-ins on a configurable cadence instead of using manual start/stop timers.
 - Stores a flat local project list for quick assignment during check-ins.
 - Detects idle/away periods and keeps them from contaminating active work totals.
+- Lets a check-in commit the next 30 minutes up to 8 hours to the project you pick, so long meetings log in one go with no prompts and no idle detection until the window ends.
 - Supports a "Done for day" mode that silences prompts until the next configured day cutoff.
 - Shows analytics by day, week, month, and year.
 - Exports allocated intervals to CSV for use in spreadsheets or other tooling.
@@ -93,6 +94,7 @@ Add new shared project skills in `.agents/skills` so the same skill definition i
 1. Add a few projects in the main window.
 2. Let Tempo prompt you on its polling interval.
 3. Pick the project you were working on, or mark the time as idle/done for day.
+   - Heading into a long meeting? Pick a window length in the prompt (30 min to 8 hours) before picking the project. Tempo attributes the whole window to it and stays quiet until it ends. "Check In Now" ends the window early and keeps only the elapsed part.
 4. Review the resulting breakdown in Analytics.
 5. Export CSV if you want the underlying intervals outside the app.
 

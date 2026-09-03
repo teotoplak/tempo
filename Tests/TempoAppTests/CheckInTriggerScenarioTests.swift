@@ -37,6 +37,62 @@ final class CheckInTriggerScenarioTests: XCTestCase {
         XCTAssertEqual(scenario.outcome.state.accountableElapsedInterval, 25 * 60)
     }
 
+    func test_timerElapsedInsideCommittedWindow_keepsPromptHidden() {
+        let scenario = CheckInTriggerScenario()
+            .givenCommittedProjectCheckIn(at: time(1, 0), committedUntil: time(3, 0))
+            .whenTimerElapses(at: time(1, 25))
+
+        XCTAssertFalse(scenario.outcome.showsPrompt)
+        XCTAssertEqual(scenario.outcome.state.nextCheckInAt, time(3, 0))
+        XCTAssertEqual(scenario.outcome.state.committedWindowEndsAt, time(3, 0))
+        XCTAssertFalse(scenario.outcome.state.isPromptOverdue)
+    }
+
+    func test_screenLockInsideCommittedWindow_recordsNoIdleTime() {
+        let scenario = CheckInTriggerScenario()
+            .givenCommittedProjectCheckIn(at: time(1, 0), committedUntil: time(3, 0))
+            .whenScreenLocks(at: time(1, 30))
+
+        XCTAssertFalse(scenario.outcome.showsPrompt)
+        XCTAssertTrue(scenario.outcome.effects.isEmpty)
+        XCTAssertFalse(scenario.outcome.state.isIdlePending)
+        XCTAssertEqual(scenario.outcome.state.committedWindowEndsAt, time(3, 0))
+    }
+
+    func test_screenUnlockInsideCommittedWindow_keepsPromptHidden() {
+        let scenario = CheckInTriggerScenario()
+            .givenCommittedProjectCheckIn(at: time(1, 0), committedUntil: time(3, 0))
+            .whenScreenLocks(at: time(1, 30))
+            .whenScreenUnlocks(at: time(2, 45))
+
+        XCTAssertFalse(scenario.outcome.showsPrompt)
+        XCTAssertFalse(scenario.outcome.state.isIdlePending)
+        XCTAssertEqual(scenario.outcome.state.nextCheckInAt, time(3, 0))
+    }
+
+    func test_committedWindowElapsed_showsFreshCheckInAnchoredAtWindowEnd() {
+        let scenario = CheckInTriggerScenario()
+            .givenCommittedProjectCheckIn(at: time(1, 0), committedUntil: time(3, 0))
+            .whenTimerElapses(at: time(3, 0))
+
+        XCTAssertTrue(scenario.outcome.showsPrompt)
+        XCTAssertEqual(scenario.outcome.prompt, .freshCheckIn)
+        XCTAssertEqual(scenario.outcome.state.nextCheckInAt, time(3, 0))
+        XCTAssertNil(scenario.outcome.state.committedWindowEndsAt)
+        XCTAssertEqual(scenario.outcome.state.accountableElapsedInterval, 0)
+    }
+
+    func test_relaunchAfterClosedCommittedWindow_promptsForTimeSinceWindowEnd() {
+        let scenario = CheckInTriggerScenario()
+            .givenClosedCommittedWindow(at: time(3, 0))
+            .whenAppRelaunches(at: time(3, 10))
+
+        XCTAssertTrue(scenario.outcome.showsPrompt)
+        XCTAssertEqual(scenario.outcome.prompt, .freshCheckIn)
+        XCTAssertEqual(scenario.outcome.state.nextCheckInAt, time(3, 0))
+        XCTAssertEqual(scenario.outcome.state.accountableElapsedInterval, 10 * 60)
+    }
+
     func test_screenUnlockBeforeIdleThreshold_promptsToResolveLockedTime() {
         let scenario = CheckInTriggerScenario()
             .withIdleThreshold(minutes: 5)
@@ -320,6 +376,45 @@ private struct CheckInTriggerScenario {
         scenario.context.knownNextCheckInAt = scenario.context.runtimeState.nextCheckInAt
         scenario.context.promptPresentedAt = nil
         scenario.lastDecision = CheckInTriggerDecision(runtimeState: scenario.context.runtimeState, prompt: .hidden)
+        return scenario
+    }
+
+    func givenCommittedProjectCheckIn(at timestamp: Date, committedUntil: Date) -> Self {
+        var scenario = self
+        scenario.context.latestCheckIn = CheckInTriggerLatestCheckIn(
+            timestamp: timestamp,
+            kind: .project,
+            source: "check-in",
+            committedWindowEndsAt: committedUntil
+        )
+        scenario.context.runtimeState = DerivedRuntimeState(
+            nextCheckInAt: committedUntil,
+            isPromptOverdue: false,
+            accountableElapsedInterval: committedUntil.timeIntervalSince(timestamp),
+            isSilenced: false,
+            silenceEndsAt: nil,
+            isIdlePending: false,
+            pendingIdleStartedAt: nil,
+            pendingIdleEndedAt: nil,
+            pendingIdleReason: nil,
+            committedWindowEndsAt: committedUntil
+        )
+        scenario.context.knownNextCheckInAt = committedUntil
+        scenario.context.promptPresentedAt = nil
+        scenario.lastDecision = CheckInTriggerDecision(runtimeState: scenario.context.runtimeState, prompt: .hidden)
+        return scenario
+    }
+
+    func givenClosedCommittedWindow(at timestamp: Date) -> Self {
+        var scenario = self
+        scenario.context.latestCheckIn = CheckInTriggerLatestCheckIn(
+            timestamp: timestamp,
+            kind: .project,
+            source: "committed-window-end",
+            closesCommittedWindow: true
+        )
+        scenario.context.knownNextCheckInAt = timestamp
+        scenario.context.promptPresentedAt = nil
         return scenario
     }
 

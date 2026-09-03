@@ -44,6 +44,19 @@ struct MenuBarRootView: View {
                             )
                         }
 
+                        if
+                            let committedWindowActivityName = appModel.committedWindowActivityName,
+                            let committedWindowRemainingText = appModel.committedWindowRemainingText(at: context.date)
+                        {
+                            statusCard(
+                                title: "Committed window",
+                                primary: committedWindowActivityName,
+                                secondary: "\(committedWindowRemainingText) · Check In Now ends it early",
+                                accent: Color(red: 0.36, green: 0.30, blue: 0.72),
+                                icon: "lock.fill"
+                            )
+                        }
+
                         statusCard(
                             title: "Current check-in",
                             primary: appModel.menuBarCurrentActivityPrimaryStatus(),

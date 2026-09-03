@@ -46,12 +46,20 @@ struct CheckInPromptContent: View {
 
                 compactProjectListSection
 
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(promptSupportingSubtitle(at: context.date))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(promptSupportingSubtitle(at: context.date))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if let appModel {
+                        windowLengthPicker(appModel: appModel)
+                    }
                 }
+                .padding(.horizontal, 4)
 
                 if let appModel {
                     standardPromptFooter(appModel: appModel)
@@ -89,6 +97,29 @@ struct CheckInPromptContent: View {
             .padding(.top, 2)
             .background(controlBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
+    }
+
+    private func windowLengthPicker(appModel: TempoAppModel) -> some View {
+        Picker("For", selection: windowLengthSelection(appModel: appModel)) {
+            ForEach(appModel.promptWindowLengthOptions) { option in
+                Text(appModel.promptWindowLengthDisplayName(option))
+                    .tag(option)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .controlSize(.small)
+        .fixedSize()
+        .help("Lock the project you pick next to this window. Tempo stays quiet until it ends.")
+    }
+
+    private func windowLengthSelection(appModel: TempoAppModel) -> Binding<CheckInWindowLength> {
+        Binding(
+            get: { appModel.promptWindowLength },
+            set: { newValue in
+                appModel.promptWindowLength = newValue
+            }
+        )
     }
 
     private func standardPromptFooter(appModel: TempoAppModel) -> some View {
