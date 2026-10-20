@@ -274,7 +274,7 @@ final class CheckInPromptWindowController {
         let frame = promptFrame(in: screenFrame, state: state)
         let panel = CheckInPromptWindow(
             contentRect: frame,
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -368,7 +368,10 @@ struct PresentationScreenGeometry: Equatable {
     let visibleFrame: CGRect
 }
 
-private final class CheckInPromptWindow: NSWindow {
+// A non-activating panel can become key while Tempo stays inactive. Since macOS 14,
+// activate(ignoringOtherApps:) from a background app is usually refused, so a regular
+// window would be ordered on top but stay non-key (greyed out, no keyboard input).
+private final class CheckInPromptWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 

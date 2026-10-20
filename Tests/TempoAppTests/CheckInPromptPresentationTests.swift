@@ -27,6 +27,7 @@ final class CheckInPromptPresentationTests: XCTestCase {
         XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces))
         XCTAssertTrue(panel.collectionBehavior.contains(.stationary))
         XCTAssertTrue(panel.canBecomeKey)
+        XCTAssertTrue(panel.styleMask.contains(.nonactivatingPanel))
     }
 
     func testElapsedFormattingUsesMinutes() {
