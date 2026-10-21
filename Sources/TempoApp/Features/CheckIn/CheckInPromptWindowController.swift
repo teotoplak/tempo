@@ -47,7 +47,7 @@ final class CheckInPromptWindowController {
             availableScreenGeometries: NSScreen.screens.map(Self.presentationScreenGeometry),
             fallbackScreenGeometry: NSScreen.main.map(Self.presentationScreenGeometry),
             mouseLocation: NSEvent.mouseLocation,
-            existingPromptFrame: promptWindow?.frame
+            existingPromptFrame: visiblePromptFrame
         )
         let screenFrame = screenGeometry.frame
         let visibleFrame = screenGeometry.visibleFrame
@@ -100,6 +100,16 @@ final class CheckInPromptWindowController {
         if promptWindow?.isKeyWindow != true {
             bringPromptToFront()
         }
+    }
+
+    // The window is reused across check-ins, so a hidden one still holds the last
+    // check-in's frame. Only an on-screen prompt should pin the screen choice.
+    private var visiblePromptFrame: CGRect? {
+        guard let promptWindow, promptWindow.isVisible else {
+            return nil
+        }
+
+        return promptWindow.frame
     }
 
     private func installScreenParametersObserverIfNeeded() {
