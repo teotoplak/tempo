@@ -12,6 +12,7 @@ final class CheckInPromptWindowController {
     private var priorActivationPolicy: NSApplication.ActivationPolicy?
     private var activationObserver: NSObjectProtocol?
     private var screenParametersObserver: NSObjectProtocol?
+    private var screenUnlockObserver: NSObjectProtocol?
     private var currentPresentedState: CheckInPromptState?
 
     func bind(appModel: TempoAppModel) {
@@ -34,6 +35,7 @@ final class CheckInPromptWindowController {
         backdropWindow?.orderOut(nil)
         removeActivationObserver()
         removeScreenParametersObserver()
+        removeScreenUnlockObserver()
 
         if let priorActivationPolicy {
             NSApplication.shared.setActivationPolicy(priorActivationPolicy)
@@ -93,6 +95,7 @@ final class CheckInPromptWindowController {
 
         installActivationObserverIfNeeded()
         installScreenParametersObserverIfNeeded()
+        installScreenUnlockObserverIfNeeded()
 
         // Only assert focus when the prompt is not already the key window. Calling
         // bringPromptToFront() unconditionally triggers activate(ignoringOtherApps:) on every
@@ -185,6 +188,45 @@ final class CheckInPromptWindowController {
             Task { @MainActor in
                 self?.reassertPromptFocusIfNeeded()
             }
+        }
+    }
+
+    // A prompt shown on wake is presented behind the lock screen. Unlocking hands activation
+    // back to the previously frontmost app, which takes key status from the prompt, and
+    // nothing else fires afterwards to reclaim it.
+    private func installScreenUnlockObserverIfNeeded() {
+        guard screenUnlockObserver == nil else {
+            return
+        }
+
+        screenUnlockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsUnlocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleScreenUnlocked()
+            }
+        }
+    }
+
+    private func removeScreenUnlockObserver() {
+        guard let screenUnlockObserver else {
+            return
+        }
+
+        DistributedNotificationCenter.default().removeObserver(screenUnlockObserver)
+        self.screenUnlockObserver = nil
+    }
+
+    private func handleScreenUnlocked() {
+        trace("screen-unlocked", metadata: ["isPromptKey": "\(promptWindow?.isKeyWindow == true)"])
+
+        // Reclaiming focus immediately loses the race with the activation handoff from
+        // loginwindow, so wait for the previous app to finish becoming active first.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            self.reassertPromptFocusIfNeeded()
         }
     }
 
